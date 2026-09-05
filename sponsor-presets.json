@@ -77,10 +77,10 @@
   ],
   "profiles": [
     {
-      "id": "gpt_image_playground-default-openai",
-      "name": "默认",
+      "id": "gpt_image-default-openai",
+      "name": "RK API",
       "provider": "openai",
-      "baseUrl": "https://api.openai.com/v1",
+      "baseUrl": "https://api.veridiantech1.com",
       "model": "gpt-image-2",
       "apiMode": "images",
       "isDefault": true
