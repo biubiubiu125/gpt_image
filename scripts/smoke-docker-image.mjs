@@ -23,7 +23,7 @@ function run(command, args, label) {
 try {
   run(
     'docker',
-    ['buildx', 'build', '--load', '--progress=plain', '-f', 'deploy/Dockerfile', '-t', imageTag, '.'],
+    ['buildx', 'build', '--platform', 'linux/amd64', '--load', '--progress=plain', '-f', 'deploy/Dockerfile', '-t', imageTag, '.'],
     'Docker image build',
   )
   run(

@@ -68,5 +68,5 @@ test('smoke image script uses buildx with --load so the local image can be run',
   const smokePath = new URL('./smoke-docker-image.mjs', import.meta.url)
   const smoke = await readFile(smokePath, 'utf8')
 
-  assert.match(smoke, /run\(\s*'docker',\s*\[\s*'buildx',\s*'build',\s*'--load',\s*'--progress=plain'/s)
+  assert.match(smoke, /run\(\s*'docker',\s*\[\s*'buildx',\s*'build',\s*'--platform',\s*'linux\/amd64',\s*'--load',\s*'--progress=plain'/s)
 })
