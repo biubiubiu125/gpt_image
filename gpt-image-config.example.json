@@ -3,9 +3,9 @@
   "profiles": [
     {
       "id": "example-openai",
-      "name": "示例配置",
+      "name": "RK API",
       "provider": "openai",
-      "baseUrl": "https://api.example.com/v1",
+      "baseUrl": "https://api.veridiantech1.com",
       "model": "gpt-image-2",
       "apiMode": "images",
       "isDefault": true

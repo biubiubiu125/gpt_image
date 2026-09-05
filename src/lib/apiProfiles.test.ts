@@ -47,6 +47,19 @@ describe('validateApiProfile', () => {
   })
 })
 
+describe('default OpenAI-compatible profile', () => {
+  it('uses RK API as the default profile', () => {
+    const profile = createDefaultOpenAIProfile()
+
+    expect(profile).toMatchObject({
+      id: DEFAULT_OPENAI_PROFILE_ID,
+      name: 'RK API',
+      provider: 'openai',
+      baseUrl: 'https://api.veridiantech1.com',
+    })
+  })
+})
+
 describe('normalizeApiProfile', () => {
   it('uses provider defaults and preserves explicit transparent background methods', () => {
     expect(normalizeApiProfile({}).transparentBackgroundMethod).toBe('api')
