@@ -70,3 +70,14 @@ test('smoke image script uses buildx with --load so the local image can be run',
 
   assert.match(smoke, /run\(\s*'docker',\s*\[\s*'buildx',\s*'build',\s*'--platform',\s*'linux\/amd64',\s*'--load',\s*'--progress=plain'/s)
 })
+
+test('smoke image script exercises the real nginx entrypoint and rewrite checks', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const smokePath = new URL('./smoke-docker-image.mjs', import.meta.url)
+  const smoke = await readFile(smokePath, 'utf8')
+
+  assert.ok(smoke.includes('/docker-entrypoint.sh nginx -g "daemon off;"'))
+  assert.ok(smoke.includes('attempts=30'))
+  assert.ok(smoke.includes("rewrite ^/api-proxy/(.*)$ /$1 break;"))
+  assert.ok(smoke.includes("proxy_pass https://api.veridiantech1.com/v1$uri$is_args$args;"))
+})
