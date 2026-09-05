@@ -299,6 +299,8 @@ npm run deploy:cf
 
 支持通过官方发布的 Docker 镜像在服务器或本地容器环境中快速运行。
 
+项目构建和 Cloudflare 部署要求 Node.js 22 或更高版本。
+
 **环境变量**
 
 | 变量 | 说明 |
@@ -311,7 +313,7 @@ npm run deploy:cf
 
 > 开启 API 代理后，任何人都能将你的服务器作为代理来请求目标 API。建议仅在有访问控制（如 IP 白名单）或本地网络中开启。
 
-> 旧版 `API_URL` 已拆分为 `DEFAULT_API_URL` 和 `API_PROXY_URL`，容器启动时自动兼容，无需立即修改。
+> 旧版 `API_URL` 已拆分为 `DEFAULT_API_URL` 和 `API_PROXY_URL`，容器启动时自动兼容，无需立即修改。仅配置 `API_URL` 时，它会作为两个新变量的兜底值；显式设置 `DEFAULT_API_URL=` 仍会保留为空，用于配合代理隐藏地址。
 
 **隐藏真实 API 地址**
 

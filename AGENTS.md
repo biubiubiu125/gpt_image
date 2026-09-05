@@ -7,6 +7,15 @@
 - React 19 + Vite + TypeScript 前端应用，使用 Zustand 状态管理、Tailwind CSS 样式。
 - 源码在 `src/`，构建产物由 Vite 生成，不要手动编辑 `dist/`。
 - 包管理器为 npm（有 `package-lock.json`），不要使用 yarn 或 pnpm。
+- 当前对外品牌是 `gpt_image` / `RK API`，默认 API 地址是 `https://api.veridiantech1.com`。
+- GHCR 镜像固定为 `ghcr.io/biubiubiu125/gpt_image`；Docker 改动要同时看运行时注入、Nginx 代理和 workflow。
+
+## 项目专有约定
+
+- `src/lib/apiProfiles.ts` 修改时，`openai`、`default-openai`、`gpt_image_playground-default-openai`、`gpt-image-playground` 这些兼容 ID 和数据键不要随意重命名。
+- `src/lib/db.ts` 的 IndexedDB 名称、`src/store.ts` 的 persist key、导入导出兼容路径要优先保持兼容。
+- Docker 相关文件 `deploy/migrate-api-env.envsh`、`deploy/inject-api-url.sh`、`deploy/nginx.conf`、`.github/workflows/docker.yml` 需要联动检查，默认 URL、`/v1` 拼接、路径转发和 smoke 校验必须一起看。
+- 在 Windows 上做完整验证时，优先用 WSL 跑 `npm test`、`npm run build`、`npm run verify:docker-runtime`、`npm run verify:docker-workflow`。
 
 ## 常用命令
 
@@ -17,6 +26,9 @@
 | 构建 | `npm run build` |
 | 运行测试 | `npm test` |
 | 监听测试 | `npm run test:watch` |
+| Docker 运行时约束 | `npm run verify:docker-runtime` |
+| Docker workflow 约束 | `npm run verify:docker-workflow` |
+| Workflow 结构测试 | `npm run test:workflow` |
 
 - 测试使用 Vitest，已有多个 `*.test.ts` 文件。
 - 不要新增 lint/formatter 配置文件，除非明确要求。

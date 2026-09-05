@@ -9,6 +9,7 @@ import {
   createDefaultOpenAIProfile,
   createDefaultFalProfile,
   getApiProviderLabel,
+  getApiProfileDisplayName,
   getActiveApiProfile,
   getCustomProviderDefinition,
   findEquivalentApiProfile,
@@ -88,7 +89,7 @@ describe('default OpenAI-compatible profile', () => {
     })
   })
 
-  it('migrates the legacy sponsor default profile label without changing its ID or URL', () => {
+  it('migrates the legacy sponsor default profile while preserving its ID and saved key', () => {
     const profile = normalizeApiProfile({
       id: 'gpt_image_playground-default-openai',
       name: '默认',
@@ -100,9 +101,197 @@ describe('default OpenAI-compatible profile', () => {
     expect(profile).toMatchObject({
       id: 'gpt_image_playground-default-openai',
       name: 'RK API',
-      baseUrl: 'https://api.openai.com/v1',
+      baseUrl: 'https://api.veridiantech1.com',
       apiKey: 'saved-key',
     })
+  })
+
+  it('normalizes legacy default profile whitespace and URL slashes', () => {
+    const current = normalizeSettings({
+      profiles: [{
+        ...createDefaultOpenAIProfile({
+          name: '默认 ',
+          baseUrl: 'https://api.openai.com/v1/',
+        }),
+      }],
+      activeProfileId: DEFAULT_OPENAI_PROFILE_ID,
+    })
+
+    expect(current.profiles[0]).toMatchObject({
+      id: DEFAULT_OPENAI_PROFILE_ID,
+      name: 'RK API',
+      baseUrl: 'https://api.veridiantech1.com',
+    })
+  })
+
+  it('migrates an untouched legacy default URL and keeps custom fields on the RK API endpoint', () => {
+    const untouched = normalizeApiProfile({
+      id: DEFAULT_OPENAI_PROFILE_ID,
+      name: '默认',
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1/',
+    })
+    const configured = normalizeApiProfile({
+      id: DEFAULT_OPENAI_PROFILE_ID,
+      name: '默认 ',
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1/',
+      apiKey: 'saved-key',
+      model: 'custom-model',
+    })
+
+    expect(untouched.baseUrl).toBe('https://api.veridiantech1.com')
+    expect(configured).toMatchObject({
+      name: 'RK API',
+      baseUrl: 'https://api.veridiantech1.com',
+      apiKey: 'saved-key',
+      model: 'custom-model',
+    })
+  })
+
+  it('migrates an untouched legacy default profile without a saved name', () => {
+    const profile = normalizeApiProfile({
+      id: DEFAULT_OPENAI_PROFILE_ID,
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+    })
+
+    expect(profile).toMatchObject({
+      name: 'RK API',
+      baseUrl: 'https://api.veridiantech1.com',
+    })
+  })
+
+  it('migrates an untouched RK API profile left on the legacy URL', () => {
+    const profile = normalizeApiProfile({
+      id: DEFAULT_OPENAI_PROFILE_ID,
+      name: ' RK API ',
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+    })
+
+    expect(profile).toMatchObject({
+      name: 'RK API',
+      baseUrl: 'https://api.veridiantech1.com',
+    })
+  })
+
+  it('keeps a hidden legacy default profile usable when the Docker proxy is available', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_DEFAULT_API_URL', '')
+    vi.stubEnv('VITE_API_PROXY_AVAILABLE', 'true')
+    vi.stubEnv('VITE_DOCKER_DEPLOYMENT', 'true')
+
+    const {
+      DEFAULT_OPENAI_PROFILE_ID: defaultProfileId,
+      normalizeApiProfile: normalizeProfile,
+      normalizeSettings: normalizeAppSettings,
+    } = await import('./apiProfiles')
+    const profile = normalizeProfile({
+      id: defaultProfileId,
+      name: '默认',
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: '',
+      model: DEFAULT_IMAGES_MODEL,
+      apiMode: 'images',
+      apiProxy: false,
+    })
+
+    expect(profile).toMatchObject({
+      baseUrl: '',
+      apiProxy: true,
+    })
+
+    const proxiedProfile = normalizeProfile({
+      id: defaultProfileId,
+      name: '默认',
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: '',
+      model: DEFAULT_IMAGES_MODEL,
+      apiMode: 'images',
+      apiProxy: true,
+    })
+    expect(proxiedProfile).toMatchObject({
+      baseUrl: '',
+      apiProxy: true,
+    })
+
+    const legacySettings = normalizeAppSettings({
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: '',
+      model: DEFAULT_IMAGES_MODEL,
+      apiMode: 'images',
+      apiProxy: false,
+    })
+    expect(legacySettings.profiles[0]).toMatchObject({
+      baseUrl: '',
+      apiProxy: true,
+    })
+
+    const proxiedLegacySettings = normalizeAppSettings({
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: '',
+      model: DEFAULT_IMAGES_MODEL,
+      apiMode: 'images',
+      apiProxy: true,
+    })
+    expect(proxiedLegacySettings.profiles[0]).toMatchObject({
+      baseUrl: '',
+      apiProxy: true,
+    })
+  })
+
+  it('migrates the untouched legacy top-level settings URL', () => {
+    const current = normalizeSettings({
+      baseUrl: 'https://api.openai.com/v1/',
+      apiKey: '',
+      model: DEFAULT_IMAGES_MODEL,
+      apiMode: 'images',
+    })
+
+    expect(current.profiles).toHaveLength(1)
+    expect(current.profiles[0]).toMatchObject({
+      name: 'RK API',
+      baseUrl: 'https://api.veridiantech1.com',
+    })
+  })
+
+  it('migrates the legacy URL when a non-default setting was customized', () => {
+    const profile = normalizeApiProfile({
+      id: DEFAULT_OPENAI_PROFILE_ID,
+      name: '默认',
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'saved-key',
+      model: 'custom-model',
+      timeout: 900,
+    })
+    const legacySettings = normalizeSettings({
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'saved-key',
+      model: 'custom-model',
+      timeout: 900,
+    })
+
+    expect(profile).toMatchObject({
+      baseUrl: 'https://api.veridiantech1.com',
+      apiKey: 'saved-key',
+      model: 'custom-model',
+      timeout: 900,
+    })
+    expect(legacySettings.baseUrl).toBe('https://api.veridiantech1.com')
+    expect(legacySettings.profiles[0]).toMatchObject({
+      baseUrl: 'https://api.veridiantech1.com',
+      apiKey: 'saved-key',
+      model: 'custom-model',
+      timeout: 900,
+    })
+  })
+
+  it('maps whitespace-padded legacy task names to RK API', () => {
+    expect(getApiProfileDisplayName(' 默认 ', 'openai')).toBe('RK API')
   })
 })
 
@@ -228,6 +417,25 @@ describe('mergeImportedSettings', () => {
     })
 
     expect(merged.profiles.find((profile) => profile.id === DEFAULT_OPENAI_PROFILE_ID)?.transparentBackgroundMethod).toBe('local')
+  })
+
+  it('does not replace a default profile with a custom description', () => {
+    const current = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({ ...profile, description: '用户自定义说明' })),
+    })
+
+    const merged = mergeImportedSettings(current, {
+      baseUrl: 'https://api.example.com/v1',
+      apiKey: 'imported-key',
+      model: 'imported-model',
+    })
+
+    expect(merged.profiles).toHaveLength(2)
+    expect(merged.profiles[0]).toMatchObject({
+      id: DEFAULT_OPENAI_PROFILE_ID,
+      description: '用户自定义说明',
+    })
   })
 
   it('replaces the default provider list with imported profiles when current settings are untouched', () => {

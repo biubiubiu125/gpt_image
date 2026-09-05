@@ -2,6 +2,9 @@
   "name": "gpt_image",
   "private": true,
   "version": "0.7.8",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +14,10 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify:docker-workflow": "node scripts/verify-docker-workflow.mjs"
+    "smoke:docker-image": "node scripts/smoke-docker-image.mjs",
+    "verify:docker-workflow": "node scripts/verify-docker-workflow.mjs",
+    "verify:docker-runtime": "node scripts/verify-docker-runtime.mjs",
+    "test:workflow": "node --test scripts/verify-docker-workflow.contract.mjs"
   },
   "dependencies": {
     "@fal-ai/client": "^1.10.0",
@@ -41,6 +47,7 @@
     "typescript": "^5.8.3",
     "vite": "^6.3.2",
     "vitest": "^4.1.5",
-    "wrangler": "^4.96.0"
+    "wrangler": "^4.96.0",
+    "yaml": "^2.9.0"
   }
 }

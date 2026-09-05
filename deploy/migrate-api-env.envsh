@@ -1,15 +1,95 @@
 #!/bin/sh
 
 # 兼容旧版本 Docker 环境变量：API_URL 同时作为两个新变量的兜底值。
+DEFAULT_API_FALLBACK=https://api.veridiantech1.com
+API_PROXY_FALLBACK=https://api.veridiantech1.com/v1
 DOCKER_LEGACY_API_URL_USED=false
-if [ -n "$API_URL" ]; then
+if [ -n "${API_URL:-}" ]; then
     DOCKER_LEGACY_API_URL_USED=true
 fi
 
+normalize_legacy_api_proxy_url() {
+    case "$1" in
+        http://*|https://*)
+            # 复现旧版客户端的 URL 规则：无尾斜杠时保留已有路径并补 /v1，
+            # 已存在 /v1 段时截断到该段；尾斜杠表示直接拼接，不补版本路径。
+            # 查询参数和片段只用于前端预置配置，不应成为代理上游的路径。
+            legacy_url=${1%%\?*}
+            legacy_url=${legacy_url%%\#*}
+            legacy_scheme=${legacy_url%%://*}
+            legacy_authority_and_path=${legacy_url#*://}
+            legacy_authority=${legacy_authority_and_path%%/*}
+            legacy_path=${legacy_authority_and_path#"$legacy_authority"}
+            legacy_origin="${legacy_scheme}://${legacy_authority}"
+            legacy_remaining=${legacy_path#/}
+            legacy_normalized_path=
+            legacy_has_v1=false
+
+            while [ -n "$legacy_remaining" ]; do
+                case "$legacy_remaining" in
+                    */*)
+                        legacy_segment=${legacy_remaining%%/*}
+                        legacy_remaining=${legacy_remaining#*/}
+                        ;;
+                    *)
+                        legacy_segment=$legacy_remaining
+                        legacy_remaining=
+                        ;;
+                esac
+                [ -n "$legacy_segment" ] || continue
+                if [ -n "$legacy_normalized_path" ]; then
+                    legacy_normalized_path="$legacy_normalized_path/$legacy_segment"
+                else
+                    legacy_normalized_path="/$legacy_segment"
+                fi
+                if [ "$legacy_segment" = "v1" ]; then
+                    legacy_has_v1=true
+                    break
+                fi
+            done
+
+            if [ "$legacy_has_v1" = "true" ]; then
+                printf '%s%s' "$legacy_origin" "$legacy_normalized_path"
+            else
+                case "$legacy_url" in
+                    */)
+                        printf '%s' "$legacy_url"
+                        ;;
+                    *)
+                        printf '%s%s/v1' "$legacy_origin" "$legacy_path"
+                        ;;
+                esac
+            fi
+            ;;
+        *)
+            printf '%s' "$1"
+            ;;
+    esac
+}
+
 if [ "${DEFAULT_API_URL+x}" != "x" ]; then
-    DEFAULT_API_URL=${API_URL:-https://api.veridiantech1.com/v1}
+    DEFAULT_API_URL=${API_URL:-$DEFAULT_API_FALLBACK}
 fi
-API_PROXY_URL=${API_PROXY_URL:-${API_URL:-https://api.veridiantech1.com/v1}}
+
+if [ -z "${API_PROXY_URL:-}" ]; then
+    API_PROXY_URL=${API_URL:-$API_PROXY_FALLBACK}
+    if [ -n "${API_URL:-}" ]; then
+        API_PROXY_URL=$(normalize_legacy_api_proxy_url "$API_PROXY_URL")
+    fi
+fi
+
+normalize_api_proxy_url() {
+    case "$1" in
+        http://*|https://*)
+            printf '%s' "$1" | sed 's#/*$##'
+            ;;
+        *)
+            printf '%s' "$1"
+            ;;
+    esac
+}
+
+API_PROXY_URL=$(normalize_api_proxy_url "$API_PROXY_URL")
 
 export DEFAULT_API_URL
 export API_PROXY_URL

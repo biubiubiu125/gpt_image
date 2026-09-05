@@ -64,6 +64,47 @@ const DEFAULT_EDIT_FILES: CustomProviderFileMapping[] = [
   { field: 'mask', source: 'mask' },
 ]
 
+function normalizeDefaultProfileUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '').toLowerCase()
+}
+
+function isEmptyOrMissing(value: unknown): boolean {
+  return value == null || (typeof value === 'string' && !value.trim())
+}
+
+function isMissingOrFalse(value: unknown): boolean {
+  return value == null || value === false
+}
+
+function isLegacyOpenAIBaseUrl(value: unknown): boolean {
+  return normalizeDefaultProfileUrl(typeof value === 'string' ? value : '') === normalizeDefaultProfileUrl(LEGACY_OPENAI_DEFAULT_API_URL)
+}
+
+function isUntouchedLegacyDefaultProfileValues(record: Record<string, unknown>): boolean {
+  if (!isLegacyOpenAIBaseUrl(record.baseUrl)) return false
+
+  if ((!isEmptyOrMissing(record.apiKey) && record.apiKey !== '') ||
+      (!isEmptyOrMissing(record.model) && record.model !== DEFAULT_IMAGES_MODEL) ||
+      (record.timeout != null && record.timeout !== DEFAULT_API_TIMEOUT) ||
+      (!isEmptyOrMissing(record.apiMode) && record.apiMode !== 'images') ||
+      !isEmptyOrMissing(record.reasoningEffort) ||
+      !isMissingOrFalse(record.codexCli) ||
+      (!isMissingOrFalse(record.apiProxy) && record.apiProxy !== DEFAULT_OPENAI_API_PROXY) ||
+      !isMissingOrFalse(record.streamImages) ||
+      (record.streamPartialImages != null &&
+        normalizeStreamPartialImages(record.streamPartialImages) !== DEFAULT_STREAM_PARTIAL_IMAGES) ||
+      (record.responseFormatB64Json === true) ||
+      (typeof record.transparentBackgroundMethod === 'string' &&
+        record.transparentBackgroundMethod.trim() !== '' &&
+        record.transparentBackgroundMethod !== 'api') ||
+      (typeof record.description === 'string' && Boolean(record.description.trim())) ||
+      (isRecord(record.providerDrafts) && Object.keys(record.providerDrafts).length > 0)) {
+    return false
+  }
+
+  return true
+}
+
 const SUB2API_PROVIDER: CustomProviderDefinition = {
   id: 'sb2api-async',
   name: 'sub2api（异步）',
@@ -544,12 +585,21 @@ export function normalizeApiProfile(
     ? createDefaultFalProfile(providerFallback)
     : createDefaultOpenAIProfile({ ...providerFallback, apiMode })
   const rawBaseUrl = typeof record.baseUrl === 'string' ? record.baseUrl : defaults.baseUrl
-  const normalizedId = typeof record.id === 'string' && record.id.trim() ? record.id : defaults.id
-  const rawName = typeof record.name === 'string' && record.name.trim() ? record.name : defaults.name
+  const normalizedId = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : defaults.id
+  const rawRecordName = typeof record.name === 'string' ? record.name : ''
+  const hasExplicitName = Boolean(rawRecordName.trim())
+  const rawName = hasExplicitName ? rawRecordName : defaults.name
+  const isLegacyDefaultName = !hasExplicitName || rawName.trim() === '默认' || rawName.trim() === API_BRAND_NAME
+  const isLegacyDefaultUrl = [DEFAULT_BASE_URL, LEGACY_OPENAI_DEFAULT_API_URL]
+    .some((url) => normalizeDefaultProfileUrl(rawBaseUrl) === normalizeDefaultProfileUrl(url))
   const isLegacyDefaultProfile = provider === 'openai' &&
     (normalizedId === DEFAULT_OPENAI_PROFILE_ID || normalizedId === LEGACY_SPONSOR_DEFAULT_PROFILE_ID) &&
-    rawName === '默认' &&
-    (rawBaseUrl === DEFAULT_BASE_URL || rawBaseUrl === LEGACY_OPENAI_DEFAULT_API_URL)
+    isLegacyDefaultName &&
+    isLegacyDefaultUrl
+  const normalizedBaseUrl = isLegacyDefaultProfile && isLegacyOpenAIBaseUrl(rawBaseUrl) ? DEFAULT_BASE_URL : rawBaseUrl
+  const normalizedApiProxy = isUntouchedLegacyDefaultProfileValues(record)
+    ? DEFAULT_OPENAI_API_PROXY
+    : typeof record.apiProxy === 'boolean' ? record.apiProxy : defaults.apiProxy
   const streamImages = provider === 'openai'
     ? typeof record.streamImages === 'boolean' ? record.streamImages : defaults.streamImages
     : false
@@ -562,14 +612,14 @@ export function normalizeApiProfile(
     name: isLegacyDefaultProfile ? API_BRAND_NAME : rawName,
     description: typeof record.description === 'string' && record.description.trim() ? record.description : undefined,
     provider,
-    baseUrl: provider === 'fal' ? rawBaseUrl.trim().replace(/\/+$/, '') : rawBaseUrl,
+    baseUrl: provider === 'fal' ? normalizedBaseUrl.trim().replace(/\/+$/, '') : normalizedBaseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : defaults.apiKey,
     model: typeof record.model === 'string' && record.model.trim() ? record.model : defaults.model,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : defaults.timeout,
     apiMode,
     reasoningEffort: normalizeReasoningEffort(record.reasoningEffort, defaults.reasoningEffort),
     codexCli: Boolean(record.codexCli),
-    apiProxy: provider === 'sb2api-async' ? false : typeof record.apiProxy === 'boolean' ? record.apiProxy : defaults.apiProxy,
+    apiProxy: provider === 'sb2api-async' ? false : normalizedApiProxy,
     responseFormatB64Json: record.responseFormatB64Json === true ? true : undefined,
     streamImages,
     streamPartialImages: normalizeStreamPartialImages(record.streamPartialImages, defaults.streamPartialImages),
@@ -662,18 +712,26 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
   const customProviderIds = new Set(customProviders.map((provider) => provider.id))
   const nativeTransparentProviderIds = new Set(customProviders.filter(customProviderSupportsNativeTransparentBackground).map((provider) => provider.id))
   const legacyApiMode: ApiMode = record.apiMode === 'responses' ? 'responses' : 'images'
+  const legacyBaseUrl = typeof record.baseUrl === 'string' ? record.baseUrl : DEFAULT_BASE_URL
+  const shouldMigrateLegacyBaseUrl = isLegacyOpenAIBaseUrl(legacyBaseUrl)
+  const shouldUseLegacyApiProxyDefault = isUntouchedLegacyDefaultProfileValues(record)
   const legacyProfile = createDefaultOpenAIProfile({
-    baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl : DEFAULT_BASE_URL,
+    baseUrl: legacyBaseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : '',
     model: typeof record.model === 'string' && record.model.trim() ? record.model : DEFAULT_IMAGES_MODEL,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : DEFAULT_API_TIMEOUT,
     apiMode: legacyApiMode,
     codexCli: Boolean(record.codexCli),
-    apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : DEFAULT_OPENAI_API_PROXY,
+    apiProxy: shouldUseLegacyApiProxyDefault
+      ? DEFAULT_OPENAI_API_PROXY
+      : typeof record.apiProxy === 'boolean' ? record.apiProxy : DEFAULT_OPENAI_API_PROXY,
     responseFormatB64Json: record.responseFormatB64Json === true ? true : undefined,
     streamImages: typeof record.streamImages === 'boolean' ? record.streamImages : undefined,
     streamPartialImages: normalizeStreamPartialImages(record.streamPartialImages),
   })
+  if (shouldMigrateLegacyBaseUrl) {
+    legacyProfile.baseUrl = DEFAULT_BASE_URL
+  }
   const normalizedProfiles = Array.isArray(record.profiles) && record.profiles.length
     ? record.profiles.map((profile) => {
         const provider = isRecord(profile) && typeof profile.provider === 'string' ? profile.provider : ''
@@ -750,7 +808,7 @@ export function getCustomProviderDefinition(settings: Partial<AppSettings> | unk
 }
 
 export function getApiProfileDisplayName(name: string | undefined, provider?: ApiProvider): string | undefined {
-  if ((provider === undefined || provider === 'openai') && name === '默认') return API_BRAND_NAME
+  if ((provider === undefined || provider === 'openai') && name?.trim() === '默认') return API_BRAND_NAME
   return name
 }
 
@@ -876,7 +934,8 @@ function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
   return profile.id === DEFAULT_OPENAI_PROFILE_ID &&
     profile.name === API_BRAND_NAME &&
     profile.provider === 'openai' &&
-    (profile.baseUrl === DEFAULT_BASE_URL || profile.baseUrl === LEGACY_OPENAI_DEFAULT_API_URL) &&
+    (normalizeDefaultProfileUrl(profile.baseUrl) === normalizeDefaultProfileUrl(DEFAULT_BASE_URL) ||
+      normalizeDefaultProfileUrl(profile.baseUrl) === normalizeDefaultProfileUrl(LEGACY_OPENAI_DEFAULT_API_URL)) &&
     profile.apiKey === '' &&
     profile.model === DEFAULT_IMAGES_MODEL &&
     profile.timeout === DEFAULT_API_TIMEOUT &&
@@ -886,7 +945,10 @@ function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
     profile.apiProxy === DEFAULT_OPENAI_API_PROXY &&
     profile.streamImages === false &&
     profile.streamPartialImages === DEFAULT_STREAM_PARTIAL_IMAGES &&
-    profile.transparentBackgroundMethod === 'api'
+    profile.transparentBackgroundMethod === 'api' &&
+    !profile.description?.trim() &&
+    profile.responseFormatB64Json !== true &&
+    (!profile.providerDrafts || Object.keys(profile.providerDrafts).length === 0)
 }
 
 function hasOnlyDefaultProfiles(settings: AppSettings): boolean {

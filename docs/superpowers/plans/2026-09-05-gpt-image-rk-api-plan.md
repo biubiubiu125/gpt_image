@@ -92,10 +92,10 @@ export const REPOSITORY_URL = 'https://github.com/biubiubiu125/gpt_image'
 
 In `src/lib/apiProfiles.ts`, import the constants, replace the OpenAI fallback URL with `DEFAULT_API_URL`, use `API_BRAND_NAME` as the default profile name, and return `API_BRAND_NAME` from `getApiProviderLabel()` for provider `openai`. Keep all internal provider IDs and protocol checks unchanged.
 
-Change Docker fallback values to `https://api.veridiantech1.com/v1` so the Nginx proxy receives a complete upstream base path:
+Use separate Docker fallbacks: the front-end default keeps the raw host `https://api.veridiantech1.com`, while the Nginx proxy target includes `/v1` because the proxy path does not add the version prefix:
 
 ```sh
-DEFAULT_API_URL=${API_URL:-https://api.veridiantech1.com/v1}
+DEFAULT_API_URL=${API_URL:-https://api.veridiantech1.com}
 API_PROXY_URL=${API_PROXY_URL:-${API_URL:-https://api.veridiantech1.com/v1}}
 ```
 
@@ -216,7 +216,7 @@ Expected: only intentional internal compatibility identifiers and generic protoc
 - Modify: `sponsor-presets.json` for the default API/name, but preserve existing preset profile IDs and third-party referral campaign URLs
 
 **Interfaces:**
-- Package and deployment identity is `gpt_image`.
+- Package, app, repository, and image identity is `gpt_image`; the Cloudflare Worker resource uses `gpt-image` because Cloudflare names cannot contain underscores.
 - Version check queries `biubiubiu125/gpt_image`.
 - README Docker examples use `ghcr.io/biubiubiu125/gpt_image:latest`.
 
@@ -224,7 +224,7 @@ Expected: only intentional internal compatibility identifiers and generic protoc
 
 Update `package.json` and the root package entry in `package-lock.json` from `gpt-image-playground` to `gpt_image`.
 
-Update `wrangler.jsonc` name to `gpt_image`.
+Update `wrangler.jsonc` name to `gpt-image` (Cloudflare Worker resource names accept lowercase letters, numbers, and hyphens; keep the package/app/repository identity as `gpt_image`).
 
 Update `src/hooks/useVersionCheck.ts`:
 
