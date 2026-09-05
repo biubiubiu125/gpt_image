@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { buildApiUrl } from './devProxy'
 import {
   DEFAULT_FAL_BASE_URL,
   DEFAULT_FAL_MODEL,
@@ -56,6 +57,34 @@ describe('default OpenAI-compatible profile', () => {
       name: 'RK API',
       provider: 'openai',
       baseUrl: 'https://api.veridiantech1.com',
+    })
+    expect(buildApiUrl(profile.baseUrl, 'images/generations')).toBe(
+      'https://api.veridiantech1.com/v1/images/generations',
+    )
+  })
+
+  it('recognizes the legacy untouched default profile during imports', () => {
+    const legacyProfile = createDefaultOpenAIProfile({
+      name: '默认',
+      baseUrl: 'https://api.openai.com/v1',
+    })
+    const current = normalizeSettings({
+      profiles: [legacyProfile],
+      activeProfileId: DEFAULT_OPENAI_PROFILE_ID,
+    })
+    expect(current.profiles[0].name).toBe('RK API')
+    const merged = mergeImportedSettings(current, {
+      baseUrl: 'https://imported.example.com/v1',
+      apiKey: 'imported-key',
+      model: 'imported-model',
+    })
+
+    expect(merged.profiles).toHaveLength(1)
+    expect(merged.profiles[0]).toMatchObject({
+      id: DEFAULT_OPENAI_PROFILE_ID,
+      baseUrl: 'https://imported.example.com/v1',
+      apiKey: 'imported-key',
+      model: 'imported-model',
     })
   })
 })

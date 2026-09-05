@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - 用户可见 API 品牌统一为 `RK API`，内部 `openai` provider、`default-openai` profile ID、IndexedDB 名称和 Zustand key 保持不变。
-- 默认 API 原始地址为 `https://api.veridiantech1.com`；按现有规则直连规范化为 `https://api.veridiantech1.com/v1`。
+- 默认 API 原始地址为 `https://api.veridiantech1.com`；按现有规则由请求组装逻辑直连到 `https://api.veridiantech1.com/v1/...`。
 - 目标仓库为 `https://github.com/biubiubiu125/gpt_image`，目标镜像为 `ghcr.io/biubiubiu125/gpt_image`。
 - Docker workflow 必须在测试和构建成功后才推送镜像，并保留 `linux/amd64` 与 `linux/arm64`。
 - 不写入 API Key、Token 或其他凭据；不修改已有本地数据存储 key。
@@ -37,7 +37,7 @@
 - `createDefaultOpenAIProfile()` returns the existing internal provider `openai`, profile ID `default-openai`, name `RK API`, and the normalized RK API URL.
 - `getApiProviderLabel()` returns `RK API` for provider `openai`.
 
-- [ ] **Step 1: Write failing tests for the branding and default profile contract**
+- [x] **Step 1: Write failing tests for the branding and default profile contract**
 
 Add assertions in `src/lib/branding.test.ts` for the exact constants:
 
@@ -64,12 +64,12 @@ it('uses RK API as the default OpenAI-compatible profile', () => {
     id: DEFAULT_OPENAI_PROFILE_ID,
     name: 'RK API',
     provider: 'openai',
-    baseUrl: 'https://api.veridiantech1.com/v1',
+    baseUrl: 'https://api.veridiantech1.com',
   })
 })
 ```
 
-- [ ] **Step 2: Run the focused tests and verify they fail for the missing behavior**
+- [x] **Step 2: Run the focused tests and verify they fail for the missing behavior**
 
 Run:
 
@@ -79,7 +79,7 @@ npm test -- src/lib/branding.test.ts src/lib/apiProfiles.test.ts
 
 Expected: the new branding module import fails and/or the existing default profile still reports the old name and URL.
 
-- [ ] **Step 3: Implement the minimum branding and API changes**
+- [x] **Step 3: Implement the minimum branding and API changes**
 
 Create `src/lib/branding.ts`:
 
@@ -101,7 +101,7 @@ API_PROXY_URL=${API_PROXY_URL:-${API_URL:-https://api.veridiantech1.com/v1}}
 
 Update `gpt-image-config.example.json` to use the RK API base URL and `RK API` profile name.
 
-- [ ] **Step 4: Run focused tests and inspect the exact normalized values**
+- [x] **Step 4: Run focused tests and inspect the exact normalized values**
 
 Run:
 
@@ -111,7 +111,7 @@ npm test -- src/lib/branding.test.ts src/lib/apiProfiles.test.ts
 
 Expected: focused tests pass, including the existing profile normalization and preset migration tests.
 
-- [ ] **Step 5: Commit the self-contained default API change**
+- [x] **Step 5: Commit the self-contained default API change**
 
 ```powershell
 git add src/lib/branding.ts src/lib/branding.test.ts src/lib/apiProfiles.ts src/lib/apiProfiles.test.ts deploy/migrate-api-env.envsh deploy/inject-api-url.sh gpt-image-config.example.json
@@ -141,7 +141,7 @@ git commit -m "feat: set RK API as the default image provider"
 - Visible built-in API label is `RK API`.
 - Existing storage identifiers remain unchanged.
 
-- [ ] **Step 1: Add a failing visible-label regression test**
+- [x] **Step 1: Add a failing visible-label regression test**
 
 Extend `src/lib/branding.test.ts` with the provider label contract through the existing API profile helper:
 
@@ -154,7 +154,7 @@ it('uses RK API for the built-in provider label', async () => {
 
 Add a source-level identity check to the test only if a pure helper is needed; do not introduce a DOM test just to assert static document text.
 
-- [ ] **Step 2: Run the focused test and confirm the pre-change label fails**
+- [x] **Step 2: Run the focused test and confirm the pre-change label fails**
 
 Run:
 
@@ -164,7 +164,7 @@ npm test -- src/lib/branding.test.ts
 
 Expected: the provider label assertion fails before the Task 1 implementation is present; after Task 1 it passes and protects the public label.
 
-- [ ] **Step 3: Update visible copy without changing protocol identifiers**
+- [x] **Step 3: Update visible copy without changing protocol identifiers**
 
 Use the branding constants in TypeScript/TSX where practical. Apply these exact visible changes:
 
@@ -191,7 +191,7 @@ Update:
 
 Do not rename `gpt-image-playground` in `src/lib/db.ts` or the Zustand persist name; these are compatibility keys.
 
-- [ ] **Step 4: Search for visible old branding and run tests**
+- [x] **Step 4: Search for visible old branding and run tests**
 
 Run:
 
@@ -220,7 +220,7 @@ Expected: only intentional internal compatibility identifiers and generic protoc
 - Version check queries `biubiubiu125/gpt_image`.
 - README Docker examples use `ghcr.io/biubiubiu125/gpt_image:latest`.
 
-- [ ] **Step 1: Replace repository and package references**
+- [x] **Step 1: Replace repository and package references**
 
 Update `package.json` and the root package entry in `package-lock.json` from `gpt-image-playground` to `gpt_image`.
 
@@ -234,7 +234,7 @@ const REPO = 'biubiubiu125/gpt_image'
 
 Update README repository badges, links, deployment button, Pages examples, Vercel project names, GHCR image references, URL examples, and project heading to the new identity. Replace the default API examples with `https://api.veridiantech1.com`.
 
-- [ ] **Step 2: Verify repository and image references**
+- [x] **Step 2: Verify repository and image references**
 
 Run:
 
@@ -244,7 +244,7 @@ rg -n -i --glob '!package-lock.json' 'CookSleep/gpt_image_playground|cooksleep/g
 
 Expected: no stale project-owned repository or image references remain except explicitly preserved compatibility keys, historical release text, or generic examples that are not project identity.
 
-- [ ] **Step 3: Run the build metadata checks**
+- [x] **Step 3: Run the build metadata checks**
 
 Run:
 
@@ -269,7 +269,7 @@ Expected: both commands print `gpt_image`.
 - `main` push, `v*` tag push, and manual dispatch are supported.
 - `latest` is updated for `main` pushes, release tags, and manual runs.
 
-- [ ] **Step 1: Add the workflow contract as a static test script**
+- [x] **Step 1: Add the workflow contract as a static test script**
 
 Create `scripts/verify-docker-workflow.mjs`:
 
@@ -300,7 +300,7 @@ Add an npm script:
 "verify:docker-workflow": "node scripts/verify-docker-workflow.mjs"
 ```
 
-- [ ] **Step 2: Run the script before changing the workflow and verify it fails**
+- [x] **Step 2: Run the script before changing the workflow and verify it fails**
 
 Run:
 
@@ -310,7 +310,7 @@ npm run verify:docker-workflow
 
 Expected: failure because the existing workflow lacks the `main` trigger, image name, and test/build gates.
 
-- [ ] **Step 3: Update the Docker workflow**
+- [x] **Step 3: Update the Docker workflow**
 
 Use this workflow shape:
 
@@ -368,7 +368,7 @@ jobs:
 
 Keep the existing Docker build context and runtime placeholder mechanism. Do not add registry credentials to the repository.
 
-- [ ] **Step 4: Run the workflow contract script**
+- [x] **Step 4: Run the workflow contract script**
 
 Run:
 
@@ -383,7 +383,7 @@ Expected: PASS.
 **Files:**
 - No source changes expected; inspect all changed files and generated artifacts.
 
-- [ ] **Step 1: Install locked dependencies**
+- [x] **Step 1: Install locked dependencies**
 
 Run:
 
@@ -393,7 +393,7 @@ npm ci
 
 Expected: exit code 0 and `node_modules/.bin/vitest` available.
 
-- [ ] **Step 2: Run all tests**
+- [x] **Step 2: Run all tests**
 
 Run:
 
@@ -403,7 +403,7 @@ npm test
 
 Expected: Vitest exits with code 0 and no failed tests.
 
-- [ ] **Step 3: Run the production build**
+- [x] **Step 3: Run the production build**
 
 Run:
 
@@ -413,7 +413,7 @@ npm run build
 
 Expected: TypeScript and Vite both exit with code 0 and produce `dist/`.
 
-- [ ] **Step 4: Run repository and workflow scans**
+- [x] **Step 4: Run repository and workflow scans**
 
 Run:
 
@@ -426,7 +426,7 @@ git status --short
 
 Expected: workflow verification passes, no unexpected old identity remains, whitespace check passes, and only intended source/docs/workflow files are modified. `dist/` and `node_modules/` must remain ignored and untracked.
 
-- [ ] **Step 5: Review the final diff**
+- [x] **Step 5: Review the final diff**
 
 Run:
 

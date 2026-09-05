@@ -28,6 +28,7 @@ const DEFAULT_API_URL_PATCH = isImportableConfigUrl(RAW_DEFAULT_API_URL)
   ? null
   : parseDefaultApiUrl(RAW_DEFAULT_API_URL || (DOCKER_DEPLOYMENT && DEFAULT_OPENAI_API_PROXY ? '' : DEFAULT_API_URL))
 const DEFAULT_BASE_URL = DEFAULT_API_URL_PATCH?.baseUrl ?? ''
+const LEGACY_OPENAI_DEFAULT_API_URL = 'https://api.openai.com/v1'
 export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
 export const DEFAULT_RESPONSES_MODEL = 'gpt-5.6-sol'
 export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
@@ -542,6 +543,12 @@ export function normalizeApiProfile(
     ? createDefaultFalProfile(providerFallback)
     : createDefaultOpenAIProfile({ ...providerFallback, apiMode })
   const rawBaseUrl = typeof record.baseUrl === 'string' ? record.baseUrl : defaults.baseUrl
+  const normalizedId = typeof record.id === 'string' && record.id.trim() ? record.id : defaults.id
+  const rawName = typeof record.name === 'string' && record.name.trim() ? record.name : defaults.name
+  const isLegacyDefaultProfile = provider === 'openai' &&
+    normalizedId === DEFAULT_OPENAI_PROFILE_ID &&
+    rawName === '默认' &&
+    (rawBaseUrl === DEFAULT_BASE_URL || rawBaseUrl === LEGACY_OPENAI_DEFAULT_API_URL)
   const streamImages = provider === 'openai'
     ? typeof record.streamImages === 'boolean' ? record.streamImages : defaults.streamImages
     : false
@@ -549,9 +556,9 @@ export function normalizeApiProfile(
 
   return {
     ...defaults,
-    id: typeof record.id === 'string' && record.id.trim() ? record.id : defaults.id,
+    id: normalizedId,
     isDefault: typeof record.isDefault === 'boolean' ? record.isDefault : undefined,
-    name: typeof record.name === 'string' && record.name.trim() ? record.name : defaults.name,
+    name: isLegacyDefaultProfile ? API_BRAND_NAME : rawName,
     description: typeof record.description === 'string' && record.description.trim() ? record.description : undefined,
     provider,
     baseUrl: provider === 'fal' ? rawBaseUrl.trim().replace(/\/+$/, '') : rawBaseUrl,
@@ -741,6 +748,11 @@ export function getCustomProviderDefinition(settings: Partial<AppSettings> | unk
   return normalized.customProviders.find((item) => item.id === provider) ?? null
 }
 
+export function getApiProfileDisplayName(name: string | undefined, provider?: ApiProvider): string | undefined {
+  if ((provider === undefined || provider === 'openai') && name === '默认') return API_BRAND_NAME
+  return name
+}
+
 export function getApiProviderLabel(settings: Partial<AppSettings> | unknown, provider: ApiProvider): string {
   if (provider === 'fal') return 'fal.ai'
   if (provider === 'openai') return API_BRAND_NAME
@@ -863,7 +875,7 @@ function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
   return profile.id === DEFAULT_OPENAI_PROFILE_ID &&
     profile.name === API_BRAND_NAME &&
     profile.provider === 'openai' &&
-    profile.baseUrl === DEFAULT_BASE_URL &&
+    (profile.baseUrl === DEFAULT_BASE_URL || profile.baseUrl === LEGACY_OPENAI_DEFAULT_API_URL) &&
     profile.apiKey === '' &&
     profile.model === DEFAULT_IMAGES_MODEL &&
     profile.timeout === DEFAULT_API_TIMEOUT &&

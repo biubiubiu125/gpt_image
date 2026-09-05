@@ -17,7 +17,7 @@
 ### 2. 默认 API
 
 - 默认 API 原始地址使用 `https://api.veridiantech1.com`。
-- 现有 URL 规范化规则继续生效：不带结尾 `/` 的域名按项目现有逻辑规范化为 `/v1`，因此直连请求使用 `https://api.veridiantech1.com/v1/...`。
+- 现有 URL 规范化规则继续生效：默认配置保存原始域名 `https://api.veridiantech1.com`，直连请求由现有 URL 组装逻辑使用 `https://api.veridiantech1.com/v1/...`。
 - 默认 profile 的名称为 `RK API`。
 - 通过 `VITE_DEFAULT_API_URL`、`DEFAULT_API_URL` 或导入 JSON 显式配置的值仍优先于内置默认值。
 - Docker API 代理的默认目标显式使用 `https://api.veridiantech1.com/v1`，因为 Nginx 代理路径不会替前端请求自动补 `/v1`。
@@ -67,7 +67,7 @@ Docker 工作流增加 `main` push 触发，并在 Docker build 前增加 Node �
 
 ## 验收标准
 
-1. 新安装页面的默认 profile 名为 `RK API`，默认 base URL 规范化为 `https://api.veridiantech1.com/v1`。
+1. 新安装页面的默认 profile 名为 `RK API`，默认 base URL 保存为 `https://api.veridiantech1.com`，实际请求地址为 `https://api.veridiantech1.com/v1/...`。
 2. 用户可见的内置 provider、任务来源、详情来源和超时提示显示 `RK API`，内部 provider 仍为 `openai`。
 3. 页面标题、PWA 名称、仓库链接、版本检查和导出文件名使用 `gpt_image` / 目标仓库。
 4. `npm test` 和 `npm run build` 通过。
