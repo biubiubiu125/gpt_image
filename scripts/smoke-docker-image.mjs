@@ -9,13 +9,13 @@ const imageTag = `gpt_image-smoke:${process.pid}`
 function run(command, args, label) {
   const result = spawnSync(command, args, {
     cwd: projectRoot,
-    encoding: 'utf8',
+    stdio: 'inherit',
   })
   if (result.error) throw result.error
   assert.equal(
     result.status,
     0,
-    `${label} failed with status ${result.status}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+    `${label} failed with status ${result.status}`,
   )
   return result
 }
