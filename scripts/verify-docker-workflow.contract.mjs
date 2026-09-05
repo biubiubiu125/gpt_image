@@ -62,3 +62,11 @@ test('accepts equivalent YAML formatting for workflow values', async () => {
 
   assert.doesNotThrow(() => verifyDockerWorkflow(workflow))
 })
+
+test('smoke image script uses buildx with --load so the local image can be run', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const smokePath = new URL('./smoke-docker-image.mjs', import.meta.url)
+  const smoke = await readFile(smokePath, 'utf8')
+
+  assert.match(smoke, /run\(\s*'docker',\s*\[\s*'buildx',\s*'build',\s*'--load',\s*'--progress=plain'/s)
+})
