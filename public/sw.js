@@ -1,5 +1,5 @@
 const CACHE_NAME = 'gpt_image-v0.7.8'
-const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './pwa-icon.svg']
+const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './brand/rk-brand.png', './brand/rk-brand-mark.png']
 const APP_SHELL_URLS = new Set(APP_SHELL.map((path) => new URL(path, self.registration.scope).href))
 const ASSETS_PATH = new URL('./assets/', self.registration.scope).pathname
 

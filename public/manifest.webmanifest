@@ -9,9 +9,9 @@
   "theme_color": "#111827",
   "icons": [
     {
-      "src": "./pwa-icon.svg",
+      "src": "./brand/rk-brand-mark.png",
       "sizes": "any",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

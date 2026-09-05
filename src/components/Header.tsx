@@ -10,6 +10,8 @@ import { useFavoriteCollectionTitle } from './FavoriteCollections'
 import { EditIcon, HelpCircleIcon, HistoryIcon, InstallIcon, SettingsIcon } from './icons'
 import { APP_NAME, REPOSITORY_URL } from '../lib/branding'
 
+const brandLogoSrc = `${import.meta.env.BASE_URL}brand/rk-brand.png`
+
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
@@ -158,9 +160,10 @@ export default function Header() {
                     href={REPOSITORY_URL}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="hidden text-lg font-bold tracking-tight text-gray-800 transition-colors hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 sm:inline"
+                    className="hidden items-center gap-2 text-lg font-bold tracking-tight text-gray-800 transition-colors hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 sm:inline-flex"
                   >
-                    {APP_NAME}
+                    <img src={brandLogoSrc} alt="RK API" className="h-7 w-auto rounded-sm object-contain" />
+                    <span>{APP_NAME}</span>
                   </a>
                 </>
               ) : (
@@ -168,9 +171,10 @@ export default function Header() {
                   href={REPOSITORY_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[17px] sm:text-lg font-bold tracking-tight text-gray-800 dark:text-gray-100 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  className="inline-flex items-center gap-2 text-[17px] sm:text-lg font-bold tracking-tight text-gray-800 dark:text-gray-100 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                 >
-                  {APP_NAME}
+                  <img src={brandLogoSrc} alt="RK API" className="h-7 w-auto rounded-sm object-contain" />
+                  <span>{APP_NAME}</span>
                 </a>
               )}
               {hasUpdate && latestRelease && (
