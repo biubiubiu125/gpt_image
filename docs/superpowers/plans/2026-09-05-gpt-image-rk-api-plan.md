@@ -213,7 +213,7 @@ Expected: only intentional internal compatibility identifiers and generic protoc
 - Modify: `AGENTS.md`
 - Modify: `LICENSE` only if the attribution text needs the target fork attribution; preserve original copyright and MIT terms
 - Modify: `.github/ISSUE_TEMPLATE/*.yml` only for repository-specific links or product labels
-- Modify: `sponsor-presets.json` only for project-specific referral strings that explicitly name the old repository
+- Modify: `sponsor-presets.json` for the default API/name, but preserve existing preset profile IDs and third-party referral campaign URLs
 
 **Interfaces:**
 - Package and deployment identity is `gpt_image`.
@@ -242,7 +242,7 @@ Run:
 rg -n -i --glob '!package-lock.json' 'CookSleep/gpt_image_playground|cooksleep/gpt_image_playground|ghcr.io/cooksleep/gpt_image_playground|gpt-image-playground' package.json package-lock.json wrangler.jsonc src README.md AGENTS.md .github deploy public index.html
 ```
 
-Expected: no stale project-owned repository or image references remain except explicitly preserved compatibility keys, historical release text, or generic examples that are not project identity.
+Expected: no stale project-owned repository or image references remain except explicitly preserved compatibility keys, historical release text, generic examples, or third-party referral campaign identifiers that are not repository mirrors.
 
 - [x] **Step 3: Run the build metadata checks**
 

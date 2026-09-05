@@ -29,6 +29,7 @@ const DEFAULT_API_URL_PATCH = isImportableConfigUrl(RAW_DEFAULT_API_URL)
   : parseDefaultApiUrl(RAW_DEFAULT_API_URL || (DOCKER_DEPLOYMENT && DEFAULT_OPENAI_API_PROXY ? '' : DEFAULT_API_URL))
 const DEFAULT_BASE_URL = DEFAULT_API_URL_PATCH?.baseUrl ?? ''
 const LEGACY_OPENAI_DEFAULT_API_URL = 'https://api.openai.com/v1'
+const LEGACY_SPONSOR_DEFAULT_PROFILE_ID = 'gpt_image_playground-default-openai'
 export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
 export const DEFAULT_RESPONSES_MODEL = 'gpt-5.6-sol'
 export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
@@ -546,7 +547,7 @@ export function normalizeApiProfile(
   const normalizedId = typeof record.id === 'string' && record.id.trim() ? record.id : defaults.id
   const rawName = typeof record.name === 'string' && record.name.trim() ? record.name : defaults.name
   const isLegacyDefaultProfile = provider === 'openai' &&
-    normalizedId === DEFAULT_OPENAI_PROFILE_ID &&
+    (normalizedId === DEFAULT_OPENAI_PROFILE_ID || normalizedId === LEGACY_SPONSOR_DEFAULT_PROFILE_ID) &&
     rawName === '默认' &&
     (rawBaseUrl === DEFAULT_BASE_URL || rawBaseUrl === LEGACY_OPENAI_DEFAULT_API_URL)
   const streamImages = provider === 'openai'

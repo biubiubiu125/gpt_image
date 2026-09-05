@@ -87,6 +87,23 @@ describe('default OpenAI-compatible profile', () => {
       model: 'imported-model',
     })
   })
+
+  it('migrates the legacy sponsor default profile label without changing its ID or URL', () => {
+    const profile = normalizeApiProfile({
+      id: 'gpt_image_playground-default-openai',
+      name: '默认',
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'saved-key',
+    })
+
+    expect(profile).toMatchObject({
+      id: 'gpt_image_playground-default-openai',
+      name: 'RK API',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'saved-key',
+    })
+  })
 })
 
 describe('normalizeApiProfile', () => {

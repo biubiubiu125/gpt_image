@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { getApiProfileDisplayName, getApiProviderLabel } from './apiProfiles'
 import { API_BRAND_NAME, APP_NAME, DEFAULT_API_URL, REPOSITORY_URL } from './branding'
@@ -18,5 +19,13 @@ describe('branding constants', () => {
     expect(getApiProfileDisplayName('默认', 'openai')).toBe('RK API')
     expect(getApiProfileDisplayName('默认')).toBe('RK API')
     expect(getApiProfileDisplayName('默认', 'fal')).toBe('默认')
+  })
+
+  it('keeps the sponsor preset default profile ID stable for existing deployments', () => {
+    const presets = JSON.parse(readFileSync(new URL('../../sponsor-presets.json', import.meta.url), 'utf8')) as {
+      profiles?: Array<{ id?: string }>
+    }
+
+    expect(presets.profiles?.[0]?.id).toBe('gpt_image_playground-default-openai')
   })
 })

@@ -77,7 +77,7 @@
   ],
   "profiles": [
     {
-      "id": "gpt_image-default-openai",
+      "id": "gpt_image_playground-default-openai",
       "name": "RK API",
       "provider": "openai",
       "baseUrl": "https://api.veridiantech1.com",

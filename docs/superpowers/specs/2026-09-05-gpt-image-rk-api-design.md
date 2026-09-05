@@ -37,6 +37,7 @@
 - 不修改 IndexedDB 数据库名 `gpt-image-playground`，避免已有任务和图片丢失。
 - 不修改 Zustand 持久化 key，避免已有设置迁移失败。
 - 不修改导出 ZIP manifest 版本和内部 provider 标识。
+- 保持 `sponsor-presets.json` 中既有预置 profile ID 和第三方推广链接稳定；这些 ID 可能被已部署用户的 API Key、激活配置和历史任务引用，推广链接也不是仓库镜像地址。
 - 更新 Service Worker 缓存版本，确保新品牌和新构建可以替换旧缓存。
 - 导出文件名改为 `gpt_image-backup_...zip`，不影响 ZIP 导入。
 
