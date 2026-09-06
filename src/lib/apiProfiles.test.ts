@@ -20,6 +20,7 @@ import {
   mergeImportedSettings,
   normalizeApiProfile,
   normalizeSettings,
+  isBrandedDefaultApiProfile,
   switchApiProfileProvider,
   validateApiProfile,
 } from './apiProfiles'
@@ -58,10 +59,29 @@ describe('default OpenAI-compatible profile', () => {
       name: 'RK API',
       provider: 'openai',
       baseUrl: 'https://api.veridiantech1.com',
+      model: 'gpt-image-2',
     })
     expect(buildApiUrl(profile.baseUrl, 'images/generations')).toBe(
       'https://api.veridiantech1.com/v1/images/generations',
     )
+  })
+
+  it('identifies only the branded default profile for hiding its API URL', () => {
+    const profile = createDefaultOpenAIProfile()
+
+    expect(isBrandedDefaultApiProfile(profile)).toBe(true)
+    expect(isBrandedDefaultApiProfile({
+      ...profile,
+      id: 'gpt_image_playground-default-openai',
+    })).toBe(true)
+    expect(isBrandedDefaultApiProfile({
+      ...profile,
+      id: 'custom-profile',
+    })).toBe(false)
+    expect(isBrandedDefaultApiProfile({
+      ...profile,
+      provider: 'fal',
+    })).toBe(false)
   })
 
   it('recognizes the legacy untouched default profile during imports', () => {

@@ -930,6 +930,11 @@ export function validateApiProfile(profile: ApiProfile): string | null {
   return null
 }
 
+export function isBrandedDefaultApiProfile(profile: Pick<ApiProfile, 'id' | 'provider'>): boolean {
+  return profile.provider === 'openai' &&
+    (profile.id === DEFAULT_OPENAI_PROFILE_ID || profile.id === LEGACY_SPONSOR_DEFAULT_PROFILE_ID)
+}
+
 function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
   return profile.id === DEFAULT_OPENAI_PROFILE_ID &&
     profile.name === API_BRAND_NAME &&
