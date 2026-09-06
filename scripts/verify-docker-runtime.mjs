@@ -187,7 +187,7 @@ try {
   assert.deepEqual(
     runMigration(migrationPath, {}),
     {
-      defaultApiUrl: 'https://api.veridiantech1.com',
+      defaultApiUrl: 'https://api.veridiantech1.com/v1',
       apiProxyUrl: 'https://api.veridiantech1.com/v1',
       legacyApiUrlUsed: 'false',
     },
@@ -244,10 +244,10 @@ try {
   assert.deepEqual(
     runMigration(migrationPath, {
       API_URL: 'https://legacy.example.com/v1/',
-      DEFAULT_API_URL: 'https://api.veridiantech1.com',
+      DEFAULT_API_URL: 'https://api.veridiantech1.com/v1',
     }),
     {
-      defaultApiUrl: 'https://api.veridiantech1.com',
+      defaultApiUrl: 'https://api.veridiantech1.com/v1',
       apiProxyUrl: 'https://legacy.example.com/v1',
       legacyApiUrlUsed: 'true',
     },
@@ -269,8 +269,8 @@ try {
   writeFileSync(localConfigPath, localConfig)
   resetRuntimeFixture(htmlDir, nginxConfigPath)
   const defaultAsset = runInjector(injectorPath, htmlDir, nginxConfigPath, {})
-  assert.match(defaultAsset, /defaultApiUrl = "https:\/\/api\.veridiantech1\.com"/)
-  assert.doesNotMatch(defaultAsset, /defaultApiUrl = "https:\/\/api\.veridiantech1\.com\/v1"/)
+  assert.match(defaultAsset, /defaultApiUrl = "https:\/\/api\.veridiantech1\.com\/v1"/)
+  assert.doesNotMatch(defaultAsset, /defaultApiUrl = "https:\/\/api\.veridiantech1\.com"/)
 
   resetRuntimeFixture(htmlDir, nginxConfigPath)
   const localPathAsset = runInjector(injectorPath, htmlDir, nginxConfigPath, {

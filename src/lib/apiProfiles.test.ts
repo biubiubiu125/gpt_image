@@ -58,7 +58,7 @@ describe('default OpenAI-compatible profile', () => {
       id: DEFAULT_OPENAI_PROFILE_ID,
       name: 'RK API',
       provider: 'openai',
-      baseUrl: 'https://api.veridiantech1.com',
+      baseUrl: 'https://api.veridiantech1.com/v1',
       model: 'gpt-image-2',
     })
     expect(buildApiUrl(profile.baseUrl, 'images/generations')).toBe(
@@ -121,7 +121,7 @@ describe('default OpenAI-compatible profile', () => {
     expect(profile).toMatchObject({
       id: 'gpt_image_playground-default-openai',
       name: 'RK API',
-      baseUrl: 'https://api.veridiantech1.com',
+      baseUrl: 'https://api.veridiantech1.com/v1',
       apiKey: 'saved-key',
     })
   })
@@ -140,7 +140,7 @@ describe('default OpenAI-compatible profile', () => {
     expect(current.profiles[0]).toMatchObject({
       id: DEFAULT_OPENAI_PROFILE_ID,
       name: 'RK API',
-      baseUrl: 'https://api.veridiantech1.com',
+      baseUrl: 'https://api.veridiantech1.com/v1',
     })
   })
 
@@ -160,10 +160,10 @@ describe('default OpenAI-compatible profile', () => {
       model: 'custom-model',
     })
 
-    expect(untouched.baseUrl).toBe('https://api.veridiantech1.com')
+    expect(untouched.baseUrl).toBe('https://api.veridiantech1.com/v1')
     expect(configured).toMatchObject({
       name: 'RK API',
-      baseUrl: 'https://api.veridiantech1.com',
+      baseUrl: 'https://api.veridiantech1.com/v1',
       apiKey: 'saved-key',
       model: 'custom-model',
     })
@@ -178,7 +178,7 @@ describe('default OpenAI-compatible profile', () => {
 
     expect(profile).toMatchObject({
       name: 'RK API',
-      baseUrl: 'https://api.veridiantech1.com',
+      baseUrl: 'https://api.veridiantech1.com/v1',
     })
   })
 
@@ -192,8 +192,21 @@ describe('default OpenAI-compatible profile', () => {
 
     expect(profile).toMatchObject({
       name: 'RK API',
-      baseUrl: 'https://api.veridiantech1.com',
+      baseUrl: 'https://api.veridiantech1.com/v1',
     })
+  })
+
+  it('migrates an existing RK API profile saved before the explicit v1 default', () => {
+    const profile = normalizeApiProfile({
+      id: DEFAULT_OPENAI_PROFILE_ID,
+      name: 'RK API',
+      provider: 'openai',
+      baseUrl: 'https://api.veridiantech1.com',
+      apiKey: 'saved-key',
+      model: DEFAULT_IMAGES_MODEL,
+    })
+
+    expect(profile.baseUrl).toBe('https://api.veridiantech1.com/v1')
   })
 
   it('keeps a hidden legacy default profile usable when the Docker proxy is available', async () => {
@@ -274,7 +287,7 @@ describe('default OpenAI-compatible profile', () => {
     expect(current.profiles).toHaveLength(1)
     expect(current.profiles[0]).toMatchObject({
       name: 'RK API',
-      baseUrl: 'https://api.veridiantech1.com',
+      baseUrl: 'https://api.veridiantech1.com/v1',
     })
   })
 
@@ -296,14 +309,14 @@ describe('default OpenAI-compatible profile', () => {
     })
 
     expect(profile).toMatchObject({
-      baseUrl: 'https://api.veridiantech1.com',
+      baseUrl: 'https://api.veridiantech1.com/v1',
       apiKey: 'saved-key',
       model: 'custom-model',
       timeout: 900,
     })
-    expect(legacySettings.baseUrl).toBe('https://api.veridiantech1.com')
+    expect(legacySettings.baseUrl).toBe('https://api.veridiantech1.com/v1')
     expect(legacySettings.profiles[0]).toMatchObject({
-      baseUrl: 'https://api.veridiantech1.com',
+      baseUrl: 'https://api.veridiantech1.com/v1',
       apiKey: 'saved-key',
       model: 'custom-model',
       timeout: 900,

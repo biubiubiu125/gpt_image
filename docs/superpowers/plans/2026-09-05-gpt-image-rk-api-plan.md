@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - 用户可见 API 品牌统一为 `RK API`，内部 `openai` provider、`default-openai` profile ID、IndexedDB 名称和 Zustand key 保持不变。
-- 默认 API 原始地址为 `https://api.veridiantech1.com`；按现有规则由请求组装逻辑直连到 `https://api.veridiantech1.com/v1/...`。
+- 默认 API 原始地址为 `https://api.veridiantech1.com/v1`；按现有规则由请求组装逻辑直连到 `https://api.veridiantech1.com/v1/...`。
 - 目标仓库为 `https://github.com/biubiubiu125/gpt_image`，目标镜像为 `ghcr.io/biubiubiu125/gpt_image`。
 - Docker workflow 必须在测试和构建成功后才推送镜像，并保留 `linux/amd64` 与 `linux/arm64`。
 - 不写入 API Key、Token 或其他凭据；不修改已有本地数据存储 key。
@@ -49,7 +49,7 @@ describe('branding constants', () => {
   it('uses the gpt_image and RK API identity', () => {
     expect(APP_NAME).toBe('gpt_image')
     expect(API_BRAND_NAME).toBe('RK API')
-    expect(DEFAULT_API_URL).toBe('https://api.veridiantech1.com')
+    expect(DEFAULT_API_URL).toBe('https://api.veridiantech1.com/v1')
     expect(REPOSITORY_URL).toBe('https://github.com/biubiubiu125/gpt_image')
   })
 })
@@ -64,7 +64,7 @@ it('uses RK API as the default OpenAI-compatible profile', () => {
     id: DEFAULT_OPENAI_PROFILE_ID,
     name: 'RK API',
     provider: 'openai',
-    baseUrl: 'https://api.veridiantech1.com',
+    baseUrl: 'https://api.veridiantech1.com/v1',
   })
 })
 ```
@@ -86,16 +86,16 @@ Create `src/lib/branding.ts`:
 ```ts
 export const APP_NAME = 'gpt_image'
 export const API_BRAND_NAME = 'RK API'
-export const DEFAULT_API_URL = 'https://api.veridiantech1.com'
+export const DEFAULT_API_URL = 'https://api.veridiantech1.com/v1'
 export const REPOSITORY_URL = 'https://github.com/biubiubiu125/gpt_image'
 ```
 
 In `src/lib/apiProfiles.ts`, import the constants, replace the OpenAI fallback URL with `DEFAULT_API_URL`, use `API_BRAND_NAME` as the default profile name, and return `API_BRAND_NAME` from `getApiProviderLabel()` for provider `openai`. Keep all internal provider IDs and protocol checks unchanged.
 
-Use separate Docker fallbacks: the front-end default keeps the raw host `https://api.veridiantech1.com`, while the Nginx proxy target includes `/v1` because the proxy path does not add the version prefix:
+Use explicit `/v1` in both Docker fallbacks so the front-end default and the Nginx proxy target point at the same NewAPI-compatible base path:
 
 ```sh
-DEFAULT_API_URL=${API_URL:-https://api.veridiantech1.com}
+DEFAULT_API_URL=${API_URL:-https://api.veridiantech1.com/v1}
 API_PROXY_URL=${API_PROXY_URL:-${API_URL:-https://api.veridiantech1.com/v1}}
 ```
 
@@ -232,7 +232,7 @@ Update `src/hooks/useVersionCheck.ts`:
 const REPO = 'biubiubiu125/gpt_image'
 ```
 
-Update README repository badges, links, deployment button, Pages examples, Vercel project names, GHCR image references, URL examples, and project heading to the new identity. Replace the default API examples with `https://api.veridiantech1.com`.
+Update README repository badges, links, deployment button, Pages examples, Vercel project names, GHCR image references, URL examples, and project heading to the new identity. Replace the default API examples with `https://api.veridiantech1.com/v1`.
 
 - [x] **Step 2: Verify repository and image references**
 

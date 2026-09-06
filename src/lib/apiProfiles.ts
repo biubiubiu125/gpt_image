@@ -28,6 +28,7 @@ const DEFAULT_API_URL_PATCH = isImportableConfigUrl(RAW_DEFAULT_API_URL)
   ? null
   : parseDefaultApiUrl(RAW_DEFAULT_API_URL || (DOCKER_DEPLOYMENT && DEFAULT_OPENAI_API_PROXY ? '' : DEFAULT_API_URL))
 const DEFAULT_BASE_URL = DEFAULT_API_URL_PATCH?.baseUrl ?? ''
+const LEGACY_BRANDED_DEFAULT_API_URL = 'https://api.veridiantech1.com'
 const LEGACY_OPENAI_DEFAULT_API_URL = 'https://api.openai.com/v1'
 const LEGACY_SPONSOR_DEFAULT_PROFILE_ID = 'gpt_image_playground-default-openai'
 export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
@@ -78,6 +79,10 @@ function isMissingOrFalse(value: unknown): boolean {
 
 function isLegacyOpenAIBaseUrl(value: unknown): boolean {
   return normalizeDefaultProfileUrl(typeof value === 'string' ? value : '') === normalizeDefaultProfileUrl(LEGACY_OPENAI_DEFAULT_API_URL)
+}
+
+function isLegacyBrandedDefaultApiUrl(value: unknown): boolean {
+  return normalizeDefaultProfileUrl(typeof value === 'string' ? value : '') === normalizeDefaultProfileUrl(LEGACY_BRANDED_DEFAULT_API_URL)
 }
 
 function isUntouchedLegacyDefaultProfileValues(record: Record<string, unknown>): boolean {
@@ -590,13 +595,16 @@ export function normalizeApiProfile(
   const hasExplicitName = Boolean(rawRecordName.trim())
   const rawName = hasExplicitName ? rawRecordName : defaults.name
   const isLegacyDefaultName = !hasExplicitName || rawName.trim() === '默认' || rawName.trim() === API_BRAND_NAME
-  const isLegacyDefaultUrl = [DEFAULT_BASE_URL, LEGACY_OPENAI_DEFAULT_API_URL]
+  const isLegacyDefaultUrl = [DEFAULT_BASE_URL, LEGACY_BRANDED_DEFAULT_API_URL, LEGACY_OPENAI_DEFAULT_API_URL]
     .some((url) => normalizeDefaultProfileUrl(rawBaseUrl) === normalizeDefaultProfileUrl(url))
   const isLegacyDefaultProfile = provider === 'openai' &&
     (normalizedId === DEFAULT_OPENAI_PROFILE_ID || normalizedId === LEGACY_SPONSOR_DEFAULT_PROFILE_ID) &&
     isLegacyDefaultName &&
     isLegacyDefaultUrl
-  const normalizedBaseUrl = isLegacyDefaultProfile && isLegacyOpenAIBaseUrl(rawBaseUrl) ? DEFAULT_BASE_URL : rawBaseUrl
+  const normalizedBaseUrl = isLegacyDefaultProfile &&
+    (isLegacyBrandedDefaultApiUrl(rawBaseUrl) || isLegacyOpenAIBaseUrl(rawBaseUrl))
+    ? DEFAULT_BASE_URL
+    : rawBaseUrl
   const normalizedApiProxy = isUntouchedLegacyDefaultProfileValues(record)
     ? DEFAULT_OPENAI_API_PROXY
     : typeof record.apiProxy === 'boolean' ? record.apiProxy : defaults.apiProxy
@@ -713,7 +721,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
   const nativeTransparentProviderIds = new Set(customProviders.filter(customProviderSupportsNativeTransparentBackground).map((provider) => provider.id))
   const legacyApiMode: ApiMode = record.apiMode === 'responses' ? 'responses' : 'images'
   const legacyBaseUrl = typeof record.baseUrl === 'string' ? record.baseUrl : DEFAULT_BASE_URL
-  const shouldMigrateLegacyBaseUrl = isLegacyOpenAIBaseUrl(legacyBaseUrl)
+  const shouldMigrateLegacyBaseUrl = isLegacyBrandedDefaultApiUrl(legacyBaseUrl) || isLegacyOpenAIBaseUrl(legacyBaseUrl)
   const shouldUseLegacyApiProxyDefault = isUntouchedLegacyDefaultProfileValues(record)
   const legacyProfile = createDefaultOpenAIProfile({
     baseUrl: legacyBaseUrl,

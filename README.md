@@ -128,8 +128,8 @@
 
 | 填写方式 | 说明 | 示例 |
 |------|------|------|
-| **直接填写 API 地址** | 自动创建一个 RK API 默认预置配置（ID 为 `default-openai`）并注入 API URL，其余参数（模型、超时等）使用应用默认值，用户只需补充 API Key。末尾带 `/` 时直接拼接接口，不补 `/v1` 前缀。适合只提供一个配置的部署。后续如需通过 JSON 或链接更新此配置，指定 `id` 为 `default-openai` 即可。 | `https://api.veridiantech1.com` |
-| **API 地址 + 查询参数** | 在地址后追加参数，可同时预填 Key、模型等字段。 | `https://api.veridiantech1.com?model=gpt-image-2&apiMode=responses` |
+| **直接填写 API 地址** | 自动创建一个 RK API 默认预置配置（ID 为 `default-openai`）并注入 API URL，其余参数（模型、超时等）使用应用默认值，用户只需补充 API Key。末尾带 `/` 时直接拼接接口，不补 `/v1` 前缀。适合只提供一个配置的部署。后续如需通过 JSON 或链接更新此配置，指定 `id` 为 `default-openai` 即可。 | `https://api.veridiantech1.com/v1` |
+| **API 地址 + 查询参数** | 在地址后追加参数，可同时预填 Key、模型等字段。 | `https://api.veridiantech1.com/v1?model=gpt-image-2&apiMode=responses` |
 | **JSON 配置文件 / 导入链接** | 通过仓库内或本地的 JSON 文件路径（如 `./config.json`）、远程 URL 或含 `?settings=` 参数的导入链接提供完整预置配置，支持预置多个配置（OpenAI 兼容、sub2api（异步）、fal.ai 或自定义供应商）。 | 详见 [预置配置 JSON 格式](#preset-config-json) |
 
 **环境变量一览**
@@ -164,7 +164,7 @@
 在 Vercel 项目的 **Settings → Environment Variables** 中设置 `VITE_DEFAULT_API_URL`，支持上述三种填写方式，可直接填写 API 地址或指定配置文件路径（如仓库内的 [`gpt-image-config.example.json`](gpt-image-config.example.json) 模板）。详见 [预置配置说明](#preset-config)。
 
 ```dotenv
-VITE_DEFAULT_API_URL=https://api.veridiantech1.com
+VITE_DEFAULT_API_URL=https://api.veridiantech1.com/v1
 ```
 
 **初始部署**
@@ -198,7 +198,7 @@ VITE_DEFAULT_API_URL=https://api.veridiantech1.com
 在仓库 **Settings → Secrets and variables → Actions** 中添加 Secret `VITE_DEFAULT_API_URL`，支持上述三种填写方式，可直接填写 API 地址或指定配置文件路径（如仓库内的 [`gpt-image-config.example.json`](gpt-image-config.example.json) 模板）。详见 [预置配置说明](#preset-config)。
 
 ```dotenv
-VITE_DEFAULT_API_URL=https://api.veridiantech1.com
+VITE_DEFAULT_API_URL=https://api.veridiantech1.com/v1
 ```
 
 **初始部署**
@@ -223,7 +223,7 @@ VITE_DEFAULT_API_URL=https://api.veridiantech1.com
 在执行构建前设置环境变量 `VITE_DEFAULT_API_URL`，支持上述三种填写方式，可直接填写 API 地址或指定配置文件路径（如仓库内的 [`gpt-image-config.example.json`](gpt-image-config.example.json) 模板）。Cloudflare Workers 不会在部署后改写静态文件，因此必须在构建前完成设置。详见 [预置配置说明](#preset-config)。
 
 ```dotenv
-VITE_DEFAULT_API_URL=https://api.veridiantech1.com
+VITE_DEFAULT_API_URL=https://api.veridiantech1.com/v1
 ```
 
 **部署**
@@ -279,7 +279,7 @@ npm run deploy:cf
 
 ```bash
 docker run -d -p 8080:80 \
-  -e DEFAULT_API_URL=https://api.veridiantech1.com \
+  -e DEFAULT_API_URL=https://api.veridiantech1.com/v1 \
   ghcr.io/biubiubiu125/gpt_image:latest
 ```
 
@@ -312,7 +312,7 @@ services:
   gpt_image:
     image: ghcr.io/biubiubiu125/gpt_image:latest
     environment:
-      - DEFAULT_API_URL=https://api.veridiantech1.com
+      - DEFAULT_API_URL=https://api.veridiantech1.com/v1
     ports:
       - "8080:80"
     restart: unless-stopped
@@ -335,7 +335,7 @@ services:
 开发服务器启动或构建时若值指向远程 `.json` 文件或本地路径，内容会自动内嵌到页面。
 
 ```dotenv
-VITE_DEFAULT_API_URL=https://api.veridiantech1.com
+VITE_DEFAULT_API_URL=https://api.veridiantech1.com/v1
 ```
 
 **2. 安装依赖并启动**
@@ -438,7 +438,7 @@ https://biubiubiu125.github.io/gpt_image?apiUrl={address}&apiKey={key}&model={mo
       "name": "我的 OpenAI 配置",
       "description": "使用前请阅读 [接口说明](https://example.com/docs)。",
       "provider": "openai",
-      "baseUrl": "https://api.veridiantech1.com",
+      "baseUrl": "https://api.veridiantech1.com/v1",
       "model": "gpt-image-2"
     }
   ]
@@ -455,7 +455,7 @@ https://biubiubiu125.github.io/gpt_image?apiUrl={address}&apiKey={key}&model={mo
       "id": "openai-main",
       "name": "OpenAI",
       "provider": "openai",
-      "baseUrl": "https://api.veridiantech1.com",
+      "baseUrl": "https://api.veridiantech1.com/v1",
       "model": "gpt-image-2",
       "isDefault": true
     },

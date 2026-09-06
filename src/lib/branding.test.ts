@@ -6,7 +6,7 @@ describe('branding constants', () => {
   it('uses the gpt_image and RK API identity', () => {
     expect(APP_NAME).toBe('gpt_image')
     expect(API_BRAND_NAME).toBe('RK API')
-    expect(DEFAULT_API_URL).toBe('https://api.veridiantech1.com')
+    expect(DEFAULT_API_URL).toBe('https://api.veridiantech1.com/v1')
     expect(REPOSITORY_URL).toBe('https://github.com/biubiubiu125/gpt_image')
   })
 

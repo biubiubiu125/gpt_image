@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # 兼容旧版本 Docker 环境变量：API_URL 同时作为两个新变量的兜底值。
-DEFAULT_API_FALLBACK=https://api.veridiantech1.com
+DEFAULT_API_FALLBACK=https://api.veridiantech1.com/v1
 API_PROXY_FALLBACK=https://api.veridiantech1.com/v1
 DOCKER_LEGACY_API_URL_USED=false
 if [ -n "${API_URL:-}" ]; then
