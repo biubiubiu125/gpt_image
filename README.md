@@ -93,7 +93,7 @@
 - **可选 Web 搜索**：可开启 `web_search` 工具，Agent 会在需要时搜索网络信息并附带引用链接。
 
 ### ⚙️ 精细化参数追踪
-- **智能尺寸控制**：提供 1K/2K/4K 快速预设，自定义宽高时会自动规整至模型安全范围（16 的倍数、总像素校验等）。
+- **智能尺寸控制**：提供 1K/2K/4K 快速预设，自定义宽高时会自动规整至模型安全范围（总像素校验、宽高比限制等）。
 - **实际参数对比**：自动提取 API 响应中真实生效的尺寸、质量、耗时以及**模型改写后的提示词**，与你的请求参数高亮对比。支持定制化的参数列表横向平滑滚动体验。
 
 ### 📁 高效历史管理 (纯本地)
@@ -129,7 +129,7 @@
 | 填写方式 | 说明 | 示例 |
 |------|------|------|
 | **直接填写 API 地址** | 自动创建一个 RK API 默认预置配置（ID 为 `default-openai`）并注入 API URL，其余参数（模型、超时等）使用应用默认值，用户只需补充 API Key。末尾带 `/` 时直接拼接接口，不补 `/v1` 前缀。适合只提供一个配置的部署。后续如需通过 JSON 或链接更新此配置，指定 `id` 为 `default-openai` 即可。 | `https://api.veridiantech1.com/v1` |
-| **API 地址 + 查询参数** | 在地址后追加参数，可同时预填 Key、模型等字段。 | `https://api.veridiantech1.com/v1?model=gpt-image-2&apiMode=responses` |
+| **API 地址 + 查询参数** | 在地址后追加参数，可同时预填 Key、模型等字段。 | `https://api.veridiantech1.com/v1?model=gpt-6-astra&apiMode=responses` |
 | **JSON 配置文件 / 导入链接** | 通过仓库内或本地的 JSON 文件路径（如 `./config.json`）、远程 URL 或含 `?settings=` 参数的导入链接提供完整预置配置，支持预置多个配置（OpenAI 兼容、sub2api（异步）、fal.ai 或自定义供应商）。 | 详见 [预置配置 JSON 格式](#preset-config-json) |
 
 **环境变量一览**
@@ -139,9 +139,9 @@
 | 构建时变量 (Vercel/CF/本地) | Docker 运行变量 | 功能说明 |
 |------|------|------|
 | `VITE_DEFAULT_API_URL` | `DEFAULT_API_URL` | 设定预置配置值（支持 URL 形式或 JSON 格式，详见 [预置配置 JSON 格式](#preset-config-json)） |
-| `VITE_LOCK_PRESET_CONFIG_PARAMS=true` | `LOCK_PRESET_CONFIG_PARAMS=true` | 锁定预置配置中除 API Key 外的参数，并禁止编辑预置供应商定义；当前锁定配置引用的供应商不可删除，解除引用后可删除 |
+| `VITE_LOCK_PRESET_CONFIG_PARAMS=true` | `LOCK_PRESET_CONFIG_PARAMS=true` | 普通预置模式下锁定预置配置中除 API Key 外的参数，并禁止编辑预置供应商定义；当前锁定配置引用的供应商不可删除，解除引用后可删除。与下方 RK API 单配置模式同时开启时，以 RK API 单配置模式为准 |
 | `VITE_PREVENT_PRESET_CONFIG_DELETION=true` | `PREVENT_PRESET_CONFIG_DELETION=true` | 禁止删除预置配置和预置供应商，不锁定参数；普通项不受影响 |
-| `VITE_SHOW_PRESET_CONFIG_ONLY=true` | `SHOW_PRESET_CONFIG_ONLY=true` | 只允许使用当前预置配置，禁止创建、复制、删除、拖动、切换供应商和管理自定义供应商；未同时开启锁定时参数仍可编辑，API Key 始终可编辑 |
+| `VITE_SHOW_PRESET_CONFIG_ONLY=true` | `SHOW_PRESET_CONFIG_ONLY=true` | RK API 单配置模式：只允许使用当前预置配置，创建、复制、删除、拖动、切换供应商和管理自定义供应商会显式禁用；配置名称、供应商和 API 地址固定，模型、API 接口、API Key 及其他参数仍可编辑，并优先于参数锁 |
 
 > **未开启上述限制时的默认行为**：
 > - **参数更新**：API 地址、模型、超时等参数会与上一次部署快照比较；部署值发生变化时覆盖一次本地值，之后保留用户的本地修改，直到部署值再次变更。

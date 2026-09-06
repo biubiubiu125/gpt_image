@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateImageSize, normalizeCodexCliImageSize, prependCodexCliSizePrompt, stripInjectedCodexCliSizePrompt } from './size'
+import { calculateImageSize, normalizeCodexCliImageSize, normalizeImageSize, prependCodexCliSizePrompt, stripInjectedCodexCliSizePrompt } from './size'
 
 describe('calculateImageSize', () => {
   it('uses common 16:9 display resolutions for the built-in tiers', () => {
@@ -16,6 +16,12 @@ describe('calculateImageSize', () => {
 
   it('falls back to budget-based sizing for custom ratios', () => {
     expect(calculateImageSize('2K', '5:4')).toBe('2288x1824')
+  })
+})
+
+describe('normalizeImageSize', () => {
+  it('keeps custom sizes without forcing 16-multiple rounding', () => {
+    expect(normalizeImageSize('1001x1000')).toBe('1001x1000')
   })
 })
 

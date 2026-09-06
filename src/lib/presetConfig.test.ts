@@ -6,21 +6,17 @@ afterEach(() => {
 })
 
 describe('preset config policy', () => {
-  it('exposes every current preset profile in preset-only mode', async () => {
+  it('rejects multiple preset profiles in preset-only mode', async () => {
     vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
     const { createDefaultFalProfile, createDefaultOpenAIProfile } = await import('./apiProfiles')
     const policy = await import('./presetConfig')
-    policy.setPresetConfig({
+    expect(() => policy.setPresetConfig({
       customProviders: [],
       profiles: [
         createDefaultOpenAIProfile({ id: 'preset-a', isDefault: true }),
         createDefaultFalProfile({ id: 'preset-b' }),
       ],
-    })
-
-    expect(policy.isPresetConfigOnlyEnabled()).toBe(true)
-    expect(policy.getPresetProfileIds()).toEqual(new Set(['preset-a', 'preset-b']))
-    expect(policy.getDefaultPresetProfileId()).toBe('preset-a')
+    })).toThrow('RK API 单配置模式仅支持一个预置配置')
   })
 
   it('exposes an optional Markdown description for preset profiles', async () => {
@@ -42,6 +38,175 @@ describe('preset config policy', () => {
     policy.setPresetConfig({ customProviders: [], profiles: [createDefaultOpenAIProfile()] })
 
     expect(policy.isPresetConfigOnlyEnabled()).toBe(true)
+  })
+
+  it('rejects invalid RK single-config deployments', async () => {
+    vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
+    const { createDefaultFalProfile, createDefaultOpenAIProfile } = await import('./apiProfiles')
+    const policy = await import('./presetConfig')
+
+    expect(policy.validatePresetOnlyConfig(null)).toBe('RK API 单配置模式未加载到任何预置配置')
+    expect(policy.validatePresetOnlyConfig({ customProviders: [], profiles: [] })).toBe('RK API 单配置模式仅支持一个预置配置')
+    expect(policy.validatePresetOnlyConfig({
+      customProviders: [{ id: 'custom-provider', name: 'Custom', submit: { path: 'generate' } }],
+      profiles: [createDefaultOpenAIProfile({ id: 'rk-api' })],
+    })).toBe('RK API 单配置模式不允许自定义服务商')
+    expect(policy.validatePresetOnlyConfig({
+      customProviders: [],
+      profiles: [createDefaultFalProfile({ id: 'fal-profile' })],
+    })).toBe('RK API 单配置模式仅支持 RK API 预置配置')
+  })
+
+  it('keeps preset identity fixed in preset-only mode while allowing model and API mode edits', async () => {
+    vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
+    const { createDefaultOpenAIProfile, normalizeSettings } = await import('./apiProfiles')
+    const policy = await import('./presetConfig')
+    const preset = createDefaultOpenAIProfile({
+      id: 'rk-api',
+      name: 'RK API',
+      provider: 'openai',
+      baseUrl: 'https://api.veridiantech1.com/v1',
+      model: 'gpt-image-2',
+      apiMode: 'images',
+      isDefault: true,
+    })
+    policy.setPresetConfig({ customProviders: [], profiles: [preset] })
+
+    const settings = normalizeSettings({
+      profiles: [{ ...preset, apiKey: 'user-key' }],
+      activeProfileId: preset.id,
+    })
+    const enforced = policy.enforcePresetConfigPolicy({
+      ...settings,
+      profiles: settings.profiles.map((profile) => profile.id === preset.id
+        ? {
+            ...profile,
+            name: 'User Rename',
+            provider: 'fal',
+            baseUrl: 'https://other.example.com/v1',
+            model: 'gpt-6-astra',
+            apiMode: 'responses',
+          }
+        : profile),
+    })
+
+    expect(enforced.profiles[0]).toMatchObject({
+      id: 'rk-api',
+      name: 'RK API',
+      provider: 'openai',
+      baseUrl: 'https://api.veridiantech1.com/v1',
+      apiKey: 'user-key',
+      model: 'gpt-6-astra',
+      apiMode: 'responses',
+    })
+  })
+
+  it('keeps model and API mode editable when both preset-only and legacy parameter lock are enabled', async () => {
+    vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
+    vi.stubEnv('VITE_LOCK_PRESET_CONFIG_PARAMS', 'true')
+    const { createDefaultOpenAIProfile, normalizeSettings } = await import('./apiProfiles')
+    const policy = await import('./presetConfig')
+    const preset = createDefaultOpenAIProfile({
+      id: 'rk-api',
+      name: 'RK API',
+      baseUrl: 'https://api.veridiantech1.com/v1',
+      model: 'gpt-image-2',
+      apiMode: 'images',
+      isDefault: true,
+    })
+    policy.setPresetConfig({ customProviders: [], profiles: [preset] })
+    const settings = normalizeSettings({
+      profiles: [preset],
+      activeProfileId: preset.id,
+    })
+
+    const enforced = policy.enforcePresetConfigPolicy({
+      ...settings,
+      profiles: settings.profiles.map((profile) => ({
+        ...profile,
+        name: 'User Rename',
+        baseUrl: 'https://other.example.com/v1',
+        model: 'custom-responses-model',
+        apiMode: 'responses',
+      })),
+    })
+
+    expect(policy.isPresetConfigParamsLocked()).toBe(false)
+    expect(enforced.profiles[0]).toMatchObject({
+      name: 'RK API',
+      baseUrl: 'https://api.veridiantech1.com/v1',
+      model: 'custom-responses-model',
+      apiMode: 'responses',
+    })
+  })
+
+  it('keeps the same RK identity through deployment import and user settings updates', async () => {
+    vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
+    vi.stubEnv('VITE_LOCK_PRESET_CONFIG_PARAMS', 'true')
+    const { createDefaultOpenAIProfile, DEFAULT_SETTINGS, normalizeSettings } = await import('./apiProfiles')
+    const policy = await import('./presetConfig')
+    const { useStore } = await import('../store')
+    const preset = createDefaultOpenAIProfile({
+      id: 'rk-api',
+      name: 'RK API',
+      baseUrl: 'https://api.veridiantech1.com/v1',
+      model: 'gpt-image-2',
+      apiMode: 'images',
+      isDefault: true,
+    })
+    policy.setPresetConfig({ customProviders: [], profiles: [preset] })
+    useStore.setState({
+      settings: normalizeSettings(DEFAULT_SETTINGS),
+      previousPresetConfig: null,
+      dismissedPresetProfileIds: [],
+      dismissedPresetProviderIds: [],
+    })
+
+    await useStore.getState().setPresetImportedSettings({ customProviders: [], profiles: [preset] })
+    const imported = useStore.getState().settings
+    expect(imported.profiles[0]).toMatchObject({
+      id: 'rk-api',
+      name: 'RK API',
+      provider: 'openai',
+      baseUrl: 'https://api.veridiantech1.com/v1',
+      model: 'gpt-image-2',
+      apiMode: 'images',
+    })
+
+    useStore.getState().setSettings({
+      profiles: imported.profiles.map((profile) => ({
+        ...profile,
+        name: '用户改名',
+        baseUrl: 'https://other.example.com/v1',
+        model: 'custom-responses-model',
+        apiMode: 'responses',
+      })),
+    })
+
+    expect(useStore.getState().settings.profiles[0]).toMatchObject({
+      id: 'rk-api',
+      name: 'RK API',
+      provider: 'openai',
+      baseUrl: 'https://api.veridiantech1.com/v1',
+      model: 'custom-responses-model',
+      apiMode: 'responses',
+    })
+  })
+
+  it('switches the default OpenAI model when a top-level apiMode change is applied without an explicit model', async () => {
+    const { DEFAULT_RESPONSES_MODEL, DEFAULT_SETTINGS, normalizeSettings } = await import('./apiProfiles')
+    const { useStore } = await import('../store')
+
+    useStore.setState({
+      settings: normalizeSettings(DEFAULT_SETTINGS),
+    })
+
+    useStore.getState().setSettings({ apiMode: 'responses' })
+
+    expect(useStore.getState().settings.profiles[0]).toMatchObject({
+      apiMode: 'responses',
+      model: DEFAULT_RESPONSES_MODEL,
+    })
   })
 
   it('locks preset parameters and providers except API keys without preventing profile deletion', async () => {
@@ -164,15 +329,14 @@ describe('preset config policy', () => {
     expect(state.dismissedPresetProviderIds).toEqual([provider.id])
   })
 
-  it('always prevents preset provider deletion in preset-only mode', async () => {
+  it('rejects custom providers in preset-only mode', async () => {
     vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
     const { createDefaultOpenAIProfile } = await import('./apiProfiles')
     const policy = await import('./presetConfig')
     const provider = { id: 'preset-provider', name: 'Preset Provider', submit: { path: 'generate' } }
     const profile = createDefaultOpenAIProfile({ id: 'preset-profile', provider: 'openai' })
-    policy.setPresetConfig({ customProviders: [provider], profiles: [profile] })
-
-    expect(policy.isPresetProviderDeletionPrevented(provider.id, [])).toBe(true)
+    expect(() => policy.setPresetConfig({ customProviders: [provider], profiles: [profile] }))
+      .toThrow('RK API 单配置模式不允许自定义服务商')
   })
 
   it('locks preset parameters without restoring their deployment order', async () => {

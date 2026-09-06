@@ -10,7 +10,7 @@ import {
   normalizeReasoningEffort,
   normalizeStreamPartialImages,
 } from './apiProfiles'
-import { isPresetConfigOnlyEnabled, isPresetConfigParamsLocked, isPresetProfile } from './presetConfig'
+import { getDefaultPresetProfileId, getPresetProfileIds, isPresetConfigOnlyEnabled, isPresetConfigParamsLocked, isPresetProfile } from './presetConfig'
 
 const URL_SETTING_KEYS = ['settings', 'profileId', 'apiUrl', 'apiKey', 'codexCli', 'apiMode', 'model', 'profileName', 'reasoningEffort', 'streamImages', 'streamPartialImages', 'transparentBackgroundMethod']
 
@@ -137,14 +137,18 @@ export function activateFirstImportedProfile(settings: AppSettings, importedSett
  * 仅展示预置配置模式：从 URL 参数中提取可覆盖的字段，patch 到当前活跃配置上。
  * 不新建配置、不导入自定义服务商、不切换 provider。
  */
-function buildPresetConfigOnlySettingsFromUrlParams(currentSettings: Partial<AppSettings> | unknown, searchParams: URLSearchParams, apiKeyOnly = false): Partial<AppSettings> {
+function buildPresetConfigOnlySettingsFromUrlParams(currentSettings: Partial<AppSettings> | unknown, searchParams: URLSearchParams, paramsLocked = false): Partial<AppSettings> {
   const settings = normalizeSettings(currentSettings)
   const requestedProfileId = searchParams.get('profileId')?.trim() ?? ''
   const requestedProfile = requestedProfileId && isPresetProfile(requestedProfileId)
     ? settings.profiles.find((profile) => profile.id === requestedProfileId)
     : undefined
   if (requestedProfileId && !requestedProfile) return {}
-  const targetProfile = requestedProfile ?? settings.profiles.find((profile) => profile.id === settings.activeProfileId) ?? settings.profiles[0]
+  const presetProfileIds = getPresetProfileIds()
+  const targetProfile = requestedProfile
+    ?? settings.profiles.find((profile) => profile.id === settings.activeProfileId && presetProfileIds.has(profile.id))
+    ?? settings.profiles.find((profile) => profile.id === getDefaultPresetProfileId())
+    ?? settings.profiles.find((profile) => presetProfileIds.has(profile.id))
   if (!targetProfile) return {}
 
   const isOpenAI = targetProfile.provider === 'openai'
@@ -166,9 +170,7 @@ function buildPresetConfigOnlySettingsFromUrlParams(currentSettings: Partial<App
       })) as Record<string, unknown> | undefined
       if (matched) {
         if (typeof matched.apiKey === 'string') patch.apiKey = matched.apiKey
-        if (!apiKeyOnly) {
-          if (typeof matched.name === 'string' && matched.name.trim()) patch.name = matched.name.trim()
-          if (typeof matched.baseUrl === 'string') patch.baseUrl = matched.baseUrl
+        if (!paramsLocked) {
           if (typeof matched.model === 'string' && matched.model.trim()) patch.model = matched.model.trim()
           if (typeof matched.timeout === 'number' && Number.isFinite(matched.timeout)) patch.timeout = matched.timeout
           if (typeof matched.apiProxy === 'boolean') patch.apiProxy = matched.apiProxy
@@ -189,25 +191,21 @@ function buildPresetConfigOnlySettingsFromUrlParams(currentSettings: Partial<App
   }
 
   // 查询参数覆盖（优先级高于 settings JSON）
-  const apiUrlParam = searchParams.get('apiUrl')
   const apiKeyParam = searchParams.get('apiKey')
   const modelParam = searchParams.get('model')
-  const profileNameParam = searchParams.get('profileName')
   const transparentBackgroundMethodParam = searchParams.get('transparentBackgroundMethod')
   if (apiKeyParam !== null) patch.apiKey = apiKeyParam.trim()
-  if (!apiKeyOnly) {
-    if (profileNameParam?.trim()) patch.name = profileNameParam.trim()
-    if (apiUrlParam !== null) patch.baseUrl = normalizeBaseUrl(apiUrlParam.trim())
+  if (!paramsLocked) {
     if (modelParam !== null && modelParam.trim()) patch.model = modelParam.trim()
     if (transparentBackgroundMethodParam === 'api' || transparentBackgroundMethodParam === 'local') {
       patch.transparentBackgroundMethod = transparentBackgroundMethodParam
     }
   }
-  if (targetProfile.provider !== 'fal' && !apiKeyOnly) {
+  if (targetProfile.provider !== 'fal' && !paramsLocked) {
     const codexCliParam = searchParams.get('codexCli')
     if (codexCliParam !== null) patch.codexCli = codexCliParam.trim().toLowerCase() === 'true'
   }
-  if (isOpenAI && !apiKeyOnly) {
+  if (isOpenAI && !paramsLocked) {
     const apiModeParam = searchParams.get('apiMode')
     const reasoningEffortParam = searchParams.get('reasoningEffort')
     const streamImagesParam = searchParams.get('streamImages')
@@ -225,7 +223,7 @@ function buildPresetConfigOnlySettingsFromUrlParams(currentSettings: Partial<App
     profiles: settings.profiles.map((profile) =>
       profile.id === targetProfile.id ? { ...profile, ...patch, provider: profile.provider } : profile,
     ),
-    activeProfileId: requestedProfile?.id ?? settings.activeProfileId,
+    activeProfileId: requestedProfile?.id ?? targetProfile.id,
   })
 }
 

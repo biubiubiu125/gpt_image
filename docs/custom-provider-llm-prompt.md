@@ -75,7 +75,7 @@ multipart files 示例：
 - transparentBackgroundMethod：可选，`"api"`（默认）或 `"local"`。接口不支持原生透明背景时填写 `"local"`。
 - isDefault：仅 profiles 包含多个配置时，为默认预置配置填写 true，其他配置省略；只能有一个配置为 true。只有一个配置时不要填写。默认项用于首次导入及重新部署后自动选择，不影响用户拖动后的列表顺序。
 
-部署开关边界：LOCK_PRESET_CONFIG_PARAMS 锁定预置 profile 除 API Key 外的参数，禁止编辑预置 provider Manifest；provider 被当前锁定预置 profile 引用时不可删除，解除引用后可删除。PREVENT_PRESET_CONFIG_DELETION 禁止删除预置 profile 和 provider；SHOW_PRESET_CONFIG_ONLY 只允许使用当前部署的预置 profile，并禁止创建、复制、删除、拖动、切换 provider 和管理自定义 provider。API Key 始终可编辑。
+部署开关边界：LOCK_PRESET_CONFIG_PARAMS 在普通预置模式下锁定预置 profile 除 API Key 外的参数，禁止编辑预置 provider Manifest；provider 被当前锁定预置 profile 引用时不可删除，解除引用后可删除。PREVENT_PRESET_CONFIG_DELETION 禁止删除预置 profile 和 provider；SHOW_PRESET_CONFIG_ONLY 是 RK API 单配置模式，只允许使用当前部署的预置 profile，创建、复制、删除、拖动、切换 provider 和管理自定义 provider 会显式禁用，配置名称、provider 和 API 地址固定，模型、API 接口、API Key 及其他参数仍可调整，并优先于参数锁。
 
 profiles 中不要包含 apiKey（用户导入后自行填写）。
 

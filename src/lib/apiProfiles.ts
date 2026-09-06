@@ -20,6 +20,7 @@ import { normalizeReasoningEffort, normalizeStreamPartialImages, parseDefaultApi
 import { API_BRAND_NAME, DEFAULT_API_URL } from './branding'
 import { readRuntimeEnv } from './runtimeEnv'
 import { isImportableConfigUrl } from './importableConfigUrl'
+import { getDefaultPresetProfileId, getPresetConfig, getPresetProfileIds, isPresetConfigOnlyEnabled } from './presetConfig'
 
 const RAW_DEFAULT_API_URL = readRuntimeEnv(import.meta.env.VITE_DEFAULT_API_URL)
 const DEFAULT_OPENAI_API_PROXY = readRuntimeEnv(import.meta.env.VITE_API_PROXY_AVAILABLE) === 'true'
@@ -32,7 +33,8 @@ const LEGACY_BRANDED_DEFAULT_API_URL = 'https://api.veridiantech1.com'
 const LEGACY_OPENAI_DEFAULT_API_URL = 'https://api.openai.com/v1'
 const LEGACY_SPONSOR_DEFAULT_PROFILE_ID = 'gpt_image_playground-default-openai'
 export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
-export const DEFAULT_RESPONSES_MODEL = 'gpt-5.6-sol'
+export const DEFAULT_RESPONSES_MODEL = 'gpt-6-astra'
+const LEGACY_RESPONSES_MODEL = 'gpt-5.6-sol'
 export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
 export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'
 export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
@@ -148,6 +150,38 @@ type ApiProfileProviderDraft = NonNullable<ApiProfile['providerDrafts']>[ApiProv
 
 function getDefaultStreamImages(provider: ApiProvider, apiMode: ApiMode): boolean {
   return provider === 'openai' && apiMode === 'responses'
+}
+
+export function getDefaultOpenAIModel(apiMode: ApiMode): string {
+  return apiMode === 'responses' ? DEFAULT_RESPONSES_MODEL : DEFAULT_IMAGES_MODEL
+}
+
+export function resolveOpenAIModelForApiModeChange(currentModel: string, nextApiMode: ApiMode): string {
+  return currentModel === DEFAULT_IMAGES_MODEL || currentModel === DEFAULT_RESPONSES_MODEL || currentModel === LEGACY_RESPONSES_MODEL
+    ? getDefaultOpenAIModel(nextApiMode)
+    : currentModel
+}
+
+function getPresetOnlyActiveProfile(normalized: AppSettings): ApiProfile | null {
+  const presetConfig = getPresetConfig()
+  const presetProfileIds = getPresetProfileIds()
+  const profiles = normalized.profiles.filter((profile) => presetProfileIds.has(profile.id))
+  if (!profiles.length) {
+    if (!presetConfig?.profiles.length) return null
+    return presetConfig.profiles[0] ?? null
+  }
+  if (!profiles.length) return null
+
+  const activeProfile = profiles.find((profile) => profile.id === normalized.activeProfileId)
+  if (activeProfile) return activeProfile
+
+  const defaultProfileId = getDefaultPresetProfileId()
+  if (defaultProfileId) {
+    const defaultProfile = profiles.find((profile) => profile.id === defaultProfileId)
+    if (defaultProfile) return defaultProfile
+  }
+
+  return profiles[0] ?? null
 }
 
 export { normalizeReasoningEffort, normalizeStreamPartialImages } from './defaultApiUrl'
@@ -411,7 +445,7 @@ export function createDefaultOpenAIProfile(overrides: Partial<ApiProfile> = {}):
     provider: 'openai',
     baseUrl: DEFAULT_BASE_URL,
     apiKey: DEFAULT_API_URL_PATCH?.apiKey ?? '',
-    model: DEFAULT_API_URL_PATCH?.model ?? DEFAULT_IMAGES_MODEL,
+    model: DEFAULT_API_URL_PATCH?.model ?? getDefaultOpenAIModel(apiMode),
     timeout: DEFAULT_API_TIMEOUT,
     reasoningEffort: DEFAULT_API_URL_PATCH?.reasoningEffort,
     codexCli: DEFAULT_API_URL_PATCH?.codexCli ?? false,
@@ -511,7 +545,9 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
     ...profile,
     provider,
     baseUrl: savedDraft?.baseUrl ?? DEFAULT_BASE_URL,
-    model: savedDraft?.model ?? DEFAULT_IMAGES_MODEL,
+    model: savedDraft?.model
+      ? resolveOpenAIModelForApiModeChange(savedDraft.model, nextApiMode)
+      : getDefaultOpenAIModel(nextApiMode),
     apiMode: nextApiMode,
     reasoningEffort: savedDraft?.reasoningEffort ?? profile.reasoningEffort,
     codexCli: savedDraft?.codexCli ?? profile.codexCli,
@@ -546,7 +582,9 @@ function normalizeProviderDraft(
     baseUrl: provider === 'fal'
       ? baseUrl?.trim().replace(/\/+$/, '') || DEFAULT_FAL_BASE_URL
       : baseUrl,
-    model,
+    model: provider === 'openai'
+      ? resolveOpenAIModelForApiModeChange(model ?? fallback.model, apiMode ?? fallback.apiMode)
+      : model,
     apiMode,
     reasoningEffort: normalizeReasoningEffort(input.reasoningEffort),
     codexCli: typeof input.codexCli === 'boolean' ? input.codexCli : fallback.codexCli,
@@ -605,6 +643,7 @@ export function normalizeApiProfile(
     (isLegacyBrandedDefaultApiUrl(rawBaseUrl) || isLegacyOpenAIBaseUrl(rawBaseUrl))
     ? DEFAULT_BASE_URL
     : rawBaseUrl
+  const rawModel = typeof record.model === 'string' && record.model.trim() ? record.model : defaults.model
   const normalizedApiProxy = isUntouchedLegacyDefaultProfileValues(record)
     ? DEFAULT_OPENAI_API_PROXY
     : typeof record.apiProxy === 'boolean' ? record.apiProxy : defaults.apiProxy
@@ -622,7 +661,9 @@ export function normalizeApiProfile(
     provider,
     baseUrl: provider === 'fal' ? normalizedBaseUrl.trim().replace(/\/+$/, '') : normalizedBaseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : defaults.apiKey,
-    model: typeof record.model === 'string' && record.model.trim() ? record.model : defaults.model,
+    model: provider === 'openai'
+      ? resolveOpenAIModelForApiModeChange(rawModel, apiMode)
+      : rawModel,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : defaults.timeout,
     apiMode,
     reasoningEffort: normalizeReasoningEffort(record.reasoningEffort, defaults.reasoningEffort),
@@ -726,7 +767,9 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
   const legacyProfile = createDefaultOpenAIProfile({
     baseUrl: legacyBaseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : '',
-    model: typeof record.model === 'string' && record.model.trim() ? record.model : DEFAULT_IMAGES_MODEL,
+    model: typeof record.model === 'string' && record.model.trim()
+      ? record.model
+      : getDefaultOpenAIModel(legacyApiMode),
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : DEFAULT_API_TIMEOUT,
     apiMode: legacyApiMode,
     codexCli: Boolean(record.codexCli),
@@ -740,6 +783,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
   if (shouldMigrateLegacyBaseUrl) {
     legacyProfile.baseUrl = DEFAULT_BASE_URL
   }
+  legacyProfile.model = resolveOpenAIModelForApiModeChange(legacyProfile.model, legacyProfile.apiMode)
   const normalizedProfiles = Array.isArray(record.profiles) && record.profiles.length
     ? record.profiles.map((profile) => {
         const provider = isRecord(profile) && typeof profile.provider === 'string' ? profile.provider : ''
@@ -800,13 +844,19 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
 export function getAgentTextApiProfile(settings: Partial<AppSettings> | unknown): ApiProfile | null {
   const normalized = normalizeSettings(settings)
   if (normalized.agentApiConfigMode === 'off') return getActiveApiProfile(normalized)
-  return normalized.profiles.find((profile) => profile.id === normalized.agentTextProfileId) ?? null
+  const profile = normalized.profiles.find((item) => item.id === normalized.agentTextProfileId) ?? null
+  if (!profile) return null
+  if (isPresetConfigOnlyEnabled() && !getPresetProfileIds().has(profile.id)) return null
+  return profile
 }
 
 export function getAgentImageApiProfile(settings: Partial<AppSettings> | unknown): ApiProfile | null {
   const normalized = normalizeSettings(settings)
   if (normalized.agentApiConfigMode !== 'hybrid') return getAgentTextApiProfile(normalized)
-  return normalized.profiles.find((profile) => profile.id === normalized.agentImageProfileId) ?? null
+  const profile = normalized.profiles.find((item) => item.id === normalized.agentImageProfileId) ?? null
+  if (!profile) return null
+  if (isPresetConfigOnlyEnabled() && !getPresetProfileIds().has(profile.id)) return null
+  return profile
 }
 
 export function getCustomProviderDefinition(settings: Partial<AppSettings> | unknown, provider: ApiProvider): CustomProviderDefinition | null {
@@ -911,14 +961,22 @@ export function importCustomProviderDefinitionFromJson(jsonText: string, existin
 export function getActiveApiProfile(settings: Partial<AppSettings> | unknown): ApiProfile {
   const record = settings && typeof settings === 'object' ? settings as Record<string, unknown> : {}
   const normalized = normalizeSettings(settings)
-  const profile = normalized.profiles.find((p) => p.id === normalized.activeProfileId) ?? normalized.profiles[0] ?? createDefaultOpenAIProfile()
+  const profile = isPresetConfigOnlyEnabled()
+    ? getPresetOnlyActiveProfile(normalized) ?? createDefaultOpenAIProfile()
+    : normalized.profiles.find((p) => p.id === normalized.activeProfileId)
+      ?? normalized.profiles[0]
+      ?? createDefaultOpenAIProfile()
   const apiMode = profile.provider === 'openai' && (record.apiMode === 'images' || record.apiMode === 'responses')
     ? record.apiMode
     : profile.apiMode
 
   return {
     ...profile,
-    baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl : profile.baseUrl,
+    baseUrl: isPresetConfigOnlyEnabled()
+      ? profile.baseUrl
+      : typeof record.baseUrl === 'string'
+        ? record.baseUrl
+        : profile.baseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : profile.apiKey,
     model: typeof record.model === 'string' && record.model.trim() ? record.model : profile.model,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : profile.timeout,
@@ -944,19 +1002,20 @@ export function isBrandedDefaultApiProfile(profile: Pick<ApiProfile, 'id' | 'pro
 }
 
 function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
+  const defaultModel = getDefaultOpenAIModel(profile.apiMode)
   return profile.id === DEFAULT_OPENAI_PROFILE_ID &&
     profile.name === API_BRAND_NAME &&
     profile.provider === 'openai' &&
     (normalizeDefaultProfileUrl(profile.baseUrl) === normalizeDefaultProfileUrl(DEFAULT_BASE_URL) ||
       normalizeDefaultProfileUrl(profile.baseUrl) === normalizeDefaultProfileUrl(LEGACY_OPENAI_DEFAULT_API_URL)) &&
     profile.apiKey === '' &&
-    profile.model === DEFAULT_IMAGES_MODEL &&
+    profile.model === defaultModel &&
     profile.timeout === DEFAULT_API_TIMEOUT &&
-    profile.apiMode === 'images' &&
+    (profile.apiMode === 'images' || profile.apiMode === 'responses') &&
     profile.reasoningEffort === undefined &&
     profile.codexCli === false &&
     profile.apiProxy === DEFAULT_OPENAI_API_PROXY &&
-    profile.streamImages === false &&
+    profile.streamImages === getDefaultStreamImages('openai', profile.apiMode) &&
     profile.streamPartialImages === DEFAULT_STREAM_PARTIAL_IMAGES &&
     profile.transparentBackgroundMethod === 'api' &&
     !profile.description?.trim() &&
@@ -1304,7 +1363,7 @@ export function mergePresetImportedSettings(
 export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   baseUrl: DEFAULT_BASE_URL,
   apiKey: DEFAULT_API_URL_PATCH?.apiKey ?? '',
-  model: DEFAULT_API_URL_PATCH?.model ?? DEFAULT_IMAGES_MODEL,
+  model: DEFAULT_API_URL_PATCH?.model ?? getDefaultOpenAIModel(DEFAULT_API_URL_PATCH?.apiMode ?? 'images'),
   timeout: DEFAULT_API_TIMEOUT,
   apiMode: DEFAULT_API_URL_PATCH?.apiMode ?? 'images',
   codexCli: DEFAULT_API_URL_PATCH?.codexCli ?? false,

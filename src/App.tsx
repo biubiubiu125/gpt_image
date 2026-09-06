@@ -114,7 +114,7 @@ export default function App() {
       })
       .catch((error) => {
         console.warn('Failed to import preset config:', error)
-        setPresetConfig(null)
+        if (isPresetConfigOnlyEnabled()) return
         const state = useStore.getState()
         void applyUrlSettings(state.settings).then((settings) => {
           useStore.getState().setSettings(settings)

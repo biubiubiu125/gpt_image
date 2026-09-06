@@ -4,6 +4,7 @@ import {
   DEFAULT_FAL_BASE_URL,
   DEFAULT_FAL_MODEL,
   DEFAULT_IMAGES_MODEL,
+  DEFAULT_RESPONSES_MODEL,
   DEFAULT_OPENAI_PROFILE_ID,
   DEFAULT_SETTINGS,
   createDefaultOpenAIProfile,
@@ -64,6 +65,140 @@ describe('default OpenAI-compatible profile', () => {
     expect(buildApiUrl(profile.baseUrl, 'images/generations')).toBe(
       'https://api.veridiantech1.com/v1/images/generations',
     )
+  })
+
+  it('uses gpt-6-astra as the default Responses API model', () => {
+    const profile = createDefaultOpenAIProfile({ apiMode: 'responses' })
+
+    expect(profile.model).toBe(DEFAULT_RESPONSES_MODEL)
+  })
+
+  it('uses the Responses default model for legacy settings without an explicit model', () => {
+    const settings = normalizeSettings({
+      apiMode: 'responses',
+      baseUrl: 'https://api.example.com/v1',
+    })
+
+    expect(settings.profiles[0].model).toBe(DEFAULT_RESPONSES_MODEL)
+  })
+
+  it('keeps the preset-only active profile on RK API even when legacy top-level baseUrl is stale', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
+    const { createDefaultOpenAIProfile, getActiveApiProfile, normalizeSettings } = await import('./apiProfiles')
+    const policy = await import('./presetConfig')
+    const preset = createDefaultOpenAIProfile({
+      id: 'rk-api',
+      name: 'RK API',
+      baseUrl: 'https://rk.example.com/v1',
+      isDefault: true,
+    })
+    policy.setPresetConfig({ customProviders: [], profiles: [preset] })
+
+    const active = getActiveApiProfile({
+      ...normalizeSettings({
+        profiles: [
+          preset,
+          createDefaultOpenAIProfile({
+            id: 'legacy-custom',
+            name: 'Legacy Custom',
+            baseUrl: 'https://legacy.example.com/v1',
+            model: 'legacy-model',
+          }),
+        ],
+        activeProfileId: 'legacy-custom',
+      }),
+      baseUrl: 'https://stale.example.com/v1',
+      apiKey: 'stale-key',
+      model: 'stale-model',
+      apiMode: 'responses',
+    })
+
+    expect(active.id).toBe(preset.id)
+    expect(active.baseUrl).toBe(preset.baseUrl)
+    expect(active.model).toBe('stale-model')
+  })
+
+  it('ignores stale non-preset Agent profile IDs in preset-only mode', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
+    const { createDefaultOpenAIProfile, getAgentImageApiProfile, getAgentTextApiProfile, normalizeSettings } = await import('./apiProfiles')
+    const policy = await import('./presetConfig')
+    const preset = createDefaultOpenAIProfile({
+      id: 'rk-api',
+      name: 'RK API',
+      baseUrl: 'https://rk.example.com/v1',
+      isDefault: true,
+    })
+    const custom = createDefaultOpenAIProfile({
+      id: 'legacy-custom',
+      name: 'Legacy Custom',
+      baseUrl: 'https://legacy.example.com/v1',
+      model: 'legacy-model',
+    })
+    policy.setPresetConfig({ customProviders: [], profiles: [preset] })
+
+    const settings = normalizeSettings({
+      profiles: [preset, custom],
+      activeProfileId: preset.id,
+      agentApiConfigMode: 'hybrid',
+      agentTextProfileId: custom.id,
+      agentImageProfileId: custom.id,
+    })
+
+    expect(getAgentTextApiProfile(settings)).toBeNull()
+    expect(getAgentImageApiProfile(settings)).toBeNull()
+  })
+
+  it('migrates the legacy gpt-5.6-sol Responses default to gpt-6-astra', () => {
+    const settings = normalizeSettings({
+      profiles: [
+        createDefaultOpenAIProfile({
+          apiMode: 'responses',
+          model: 'gpt-5.6-sol',
+        }),
+      ],
+    })
+
+    expect(settings.profiles[0].model).toBe(DEFAULT_RESPONSES_MODEL)
+  })
+
+  it('keeps custom 5.6 models editable while normalizing Responses profiles', () => {
+    const settings = normalizeSettings({
+      profiles: [
+        createDefaultOpenAIProfile({
+          apiMode: 'responses',
+          model: 'gpt-5.6-terra',
+        }),
+      ],
+    })
+
+    expect(settings.profiles[0].model).toBe('gpt-5.6-terra')
+  })
+
+  it('treats the default Responses profile as a pristine default for imports', () => {
+    const current = normalizeSettings({
+      profiles: [createDefaultOpenAIProfile({ apiMode: 'responses' })],
+      activeProfileId: DEFAULT_OPENAI_PROFILE_ID,
+    })
+    const imported = normalizeSettings({
+      profiles: [
+        createDefaultOpenAIProfile({
+          id: 'imported-profile',
+          name: 'Imported',
+        }),
+      ],
+      activeProfileId: 'imported-profile',
+    })
+
+    const merged = mergeImportedSettings(current, imported)
+
+    expect(merged.profiles).toHaveLength(1)
+    expect(merged.profiles[0]).toMatchObject({
+      id: 'imported-profile',
+      name: 'Imported',
+      model: DEFAULT_IMAGES_MODEL,
+    })
   })
 
   it('identifies only the branded default profile for hiding its API URL', () => {
@@ -1944,5 +2079,31 @@ describe('custom providers', () => {
     expect(restoredProfile.baseUrl).toBe('https://api.compat.example.com/v1')
     expect(restoredProfile.model).toBe('custom-openai-model')
     expect(restoredProfile.apiProxy).toBe(false)
+  })
+
+  it('uses gpt-6-astra when restoring an OpenAI Responses draft from fal.ai', () => {
+    const falProfile = createDefaultFalProfile({
+      providerDrafts: {
+        openai: { apiMode: 'responses' },
+      },
+    })
+
+    const restoredProfile = switchApiProfileProvider(falProfile, 'openai')
+
+    expect(restoredProfile.apiMode).toBe('responses')
+    expect(restoredProfile.model).toBe('gpt-6-astra')
+  })
+
+  it('migrates the legacy gpt-5.6-sol draft when restoring an OpenAI provider', () => {
+    const falProfile = createDefaultFalProfile({
+      providerDrafts: {
+        openai: { apiMode: 'responses', model: 'gpt-5.6-sol' },
+      },
+    })
+
+    const restoredProfile = switchApiProfileProvider(falProfile, 'openai')
+
+    expect(restoredProfile.apiMode).toBe('responses')
+    expect(restoredProfile.model).toBe(DEFAULT_RESPONSES_MODEL)
   })
 })

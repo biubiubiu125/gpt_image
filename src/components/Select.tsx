@@ -5,16 +5,22 @@ import { ChevronDownIcon, EditIcon, PlusIcon, TrashIcon, DragHandleIcon } from '
 import ViewportTooltip from './ViewportTooltip'
 import { useTooltip } from '../hooks/useTooltip'
 
+interface OptionAction {
+  label: string
+  variant?: 'danger'
+  disabled?: boolean
+  disabledReason?: string
+  onClick: () => void
+}
+
 interface Option {
   label: string
   value: string | number
   variant?: 'action' | 'danger'
   draggable?: boolean
-  actions?: Array<{
-    label: string
-    variant?: 'danger'
-    onClick: () => void
-  }>
+  disabled?: boolean
+  disabledReason?: string
+  actions?: OptionAction[]
 }
 
 interface SelectProps {
@@ -212,15 +218,15 @@ export default function Select({ value, onChange, onReorder, options, disabled, 
             <div
               key={option.value}
               data-option-value={String(option.value)}
-              draggable={option.draggable}
+              draggable={option.draggable && !option.disabled}
               onDragStart={(e) => {
-                if (!option.draggable) return
+                if (!option.draggable || option.disabled) return
                 setDraggedValue(option.value)
                 e.dataTransfer.effectAllowed = 'move'
                 e.dataTransfer.setData('text/plain', String(option.value))
               }}
               onDragOver={(e) => {
-                if (!option.draggable || !draggedValue) return
+                if (!option.draggable || option.disabled || !draggedValue) return
                 e.preventDefault()
                 e.dataTransfer.dropEffect = 'move'
 
@@ -252,7 +258,7 @@ export default function Select({ value, onChange, onReorder, options, disabled, 
                 setDragDropPosition(null)
               }}
               onDrop={(e) => {
-                if (!option.draggable || !onReorder) return
+                if (!option.draggable || option.disabled || !onReorder) return
                 e.preventDefault()
                 setDraggedValue(null)
                 setDragOverValue(null)
@@ -265,6 +271,7 @@ export default function Select({ value, onChange, onReorder, options, disabled, 
                 }
               }}
               onTouchStart={(e) => {
+                if (option.disabled) return
                 if (!option.draggable) {
                   if (!showValueTooltips) return
                   clearOptionTooltipTimer()
@@ -305,6 +312,7 @@ export default function Select({ value, onChange, onReorder, options, disabled, 
                 })
               }}
               onTouchMove={(e) => {
+                if (option.disabled) return
                 clearOptionTooltipTimer()
                 const drag = touchDragRef.current
                 if (!drag || !option.draggable) return
@@ -364,6 +372,10 @@ export default function Select({ value, onChange, onReorder, options, disabled, 
                 }
               }}
               onTouchEnd={(e) => {
+                if (option.disabled) {
+                  clearTouchDrag()
+                  return
+                }
                 clearOptionTooltipTimer()
                 if (optionLongPressTriggeredRef.current) {
                   if (e.cancelable) e.preventDefault()
@@ -386,6 +398,10 @@ export default function Select({ value, onChange, onReorder, options, disabled, 
               onTouchCancel={clearTouchDrag}
               onClick={(e) => {
                 if ((e.target as HTMLElement).closest('button, [data-drag-handle]')) return
+                if (option.disabled) {
+                  e.preventDefault()
+                  return
+                }
                 e.preventDefault()
                 onChange(option.value)
                 setIsOpen(false)
@@ -402,8 +418,11 @@ export default function Select({ value, onChange, onReorder, options, disabled, 
                 clearOptionTooltipTimer()
                 setHoveredOptionTooltip(null)
               }}
+              title={option.disabled ? option.disabledReason ?? option.label : option.label}
               className={`relative flex min-h-9 cursor-pointer items-center justify-between gap-2 px-3 py-2 text-xs transition-colors ${
-                draggedValue === option.value
+                option.disabled
+                  ? 'cursor-not-allowed bg-transparent text-gray-300 dark:text-gray-600'
+                  : draggedValue === option.value
                   ? 'opacity-40 bg-gray-100 dark:bg-white/[0.04]'
                   : option.variant === 'action'
                   ? 'font-semibold text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-500/10'
@@ -444,19 +463,25 @@ export default function Select({ value, onChange, onReorder, options, disabled, 
                     <button
                       key={action.label}
                       type="button"
-                      title={action.label}
+                      title={action.disabled ? action.disabledReason ?? action.label : action.label}
                       onPointerDown={(event) => {
                         event.stopPropagation()
                       }}
                       onClick={(event) => {
                         event.preventDefault()
                         event.stopPropagation()
+                        if (action.disabled) return
                         action.onClick()
                         setIsOpen(false)
                       }}
+                      disabled={action.disabled}
                       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded transition ${action.variant === 'danger'
-                        ? 'text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10'
-                        : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/[0.08] dark:hover:text-gray-200'}`}
+                        ? action.disabled
+                          ? 'cursor-not-allowed text-gray-300 dark:text-gray-600'
+                          : 'text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10'
+                        : action.disabled
+                        ? 'cursor-not-allowed text-gray-300 dark:text-gray-600'
+                        : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/[0.08] dark:hover:text-gray-200'} disabled:opacity-100`}
                     >
                       {action.label === '编辑' ? (
                         <EditIcon className="w-3.5 h-3.5" />

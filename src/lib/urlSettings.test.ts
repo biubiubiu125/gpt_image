@@ -3,6 +3,7 @@ import {
   createDefaultFalProfile,
   createDefaultOpenAIProfile,
   DEFAULT_IMAGES_MODEL,
+  DEFAULT_RESPONSES_MODEL,
   DEFAULT_SETTINGS,
   normalizeSettings,
 } from './apiProfiles'
@@ -12,7 +13,7 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-async function importPresetConfigOnlyUrlSettings(options: { locked?: boolean, multiple?: boolean } = {}) {
+async function importPresetConfigOnlyUrlSettings(options: { locked?: boolean } = {}) {
   vi.resetModules()
   vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
   if (options.locked) vi.stubEnv('VITE_LOCK_PRESET_CONFIG_PARAMS', 'true')
@@ -21,12 +22,7 @@ async function importPresetConfigOnlyUrlSettings(options: { locked?: boolean, mu
   const presetConfig = await import('./presetConfig')
   presetConfig.setPresetConfig({
     customProviders: [],
-    profiles: options.multiple
-      ? [
-          apiProfiles.createDefaultOpenAIProfile({ id: 'preset-a', name: 'Preset A', isDefault: true }),
-          apiProfiles.createDefaultOpenAIProfile({ id: 'preset-b', name: 'Preset B' }),
-        ]
-      : [apiProfiles.createDefaultOpenAIProfile()],
+    profiles: [apiProfiles.createDefaultOpenAIProfile({ id: 'rk-api', name: 'RK API', isDefault: true })],
   })
   return import('./urlSettings')
 }
@@ -153,7 +149,11 @@ describe('URL settings params', () => {
   })
 
   it('uses reasoning effort from URL params for Responses profiles', () => {
-    const current = normalizeSettings(DEFAULT_SETTINGS)
+    const current = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [createDefaultOpenAIProfile({ id: 'rk-api', name: 'RK API', isDefault: true })],
+      activeProfileId: 'rk-api',
+    })
     const next = normalizeSettings({
       ...current,
       ...buildSettingsFromUrlParams(current, new URLSearchParams('apiMode=responses&reasoningEffort=max')),
@@ -165,8 +165,29 @@ describe('URL settings params', () => {
     })
   })
 
+  it('switches the default OpenAI model when apiMode changes without an explicit model', () => {
+    const current = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [createDefaultOpenAIProfile({ id: 'rk-api', name: 'RK API', isDefault: true })],
+      activeProfileId: 'rk-api',
+    })
+    const next = normalizeSettings({
+      ...current,
+      ...buildSettingsFromUrlParams(current, new URLSearchParams('apiMode=responses')),
+    })
+
+    expect(next.profiles.find((profile) => profile.id === next.activeProfileId)).toMatchObject({
+      apiMode: 'responses',
+      model: DEFAULT_RESPONSES_MODEL,
+    })
+  })
+
   it('uses profile name from URL params for OpenAI profiles', () => {
-    const current = normalizeSettings(DEFAULT_SETTINGS)
+    const current = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [createDefaultOpenAIProfile({ id: 'rk-api', name: 'RK API', isDefault: true })],
+      activeProfileId: 'rk-api',
+    })
     const next = normalizeSettings({
       ...current,
       ...buildSettingsFromUrlParams(current, new URLSearchParams('apiUrl=https://api.example.com/v1&apiKey=test-key&profileName=测试配置')),
@@ -526,9 +547,13 @@ describe('URL settings params', () => {
     })
   })
 
-  it('patches the active profile instead of creating a new one when only default config is shown', async () => {
+  it('patches editable fields without changing RK API identity when only default config is shown', async () => {
     const { buildSettingsFromUrlParams } = await importPresetConfigOnlyUrlSettings()
-    const current = normalizeSettings(DEFAULT_SETTINGS)
+    const current = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [createDefaultOpenAIProfile({ id: 'rk-api', name: 'RK API', isDefault: true })],
+      activeProfileId: 'rk-api',
+    })
     const next = normalizeSettings({
       ...current,
       ...buildSettingsFromUrlParams(current, new URLSearchParams('apiUrl=https://api.example.com/v1&apiKey=test-key&model=custom-model&profileName=导入配置&apiMode=responses')),
@@ -540,8 +565,8 @@ describe('URL settings params', () => {
     expect(next.profiles[0]).toMatchObject({
       id: current.activeProfileId,
       provider: 'openai',
-      name: '导入配置',
-      baseUrl: 'https://api.example.com/v1',
+      name: 'RK API',
+      baseUrl: current.profiles[0].baseUrl,
       apiKey: 'test-key',
       model: 'custom-model',
       apiMode: 'responses',
@@ -578,7 +603,11 @@ describe('URL settings params', () => {
     const params = new URLSearchParams()
     params.set('settings', JSON.stringify(importedSettings))
 
-    const current = normalizeSettings(DEFAULT_SETTINGS)
+    const current = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [createDefaultOpenAIProfile({ id: 'rk-api', name: 'RK API', isDefault: true })],
+      activeProfileId: 'rk-api',
+    })
     const next = normalizeSettings({
       ...current,
       ...buildSettingsFromUrlParams(current, params),
@@ -610,33 +639,37 @@ describe('URL settings params', () => {
         },
       }],
       profiles: [{
-        id: 'custom-profile',
-        name: 'Custom Profile',
-        provider: 'custom-json',
-        baseUrl: 'https://custom.example.com/v1',
-        apiKey: 'custom-key',
-        model: 'custom-model',
-        timeout: 300,
-        apiMode: 'images',
-        codexCli: false,
-        apiProxy: false,
-      }, {
-        id: 'openai-profile',
-        name: 'OpenAI Profile',
+        id: 'rk-api',
+        name: 'RK API',
         provider: 'openai',
-        baseUrl: 'https://openai.example.com/v1',
+        baseUrl: 'https://rk.example.com/v1',
         apiKey: 'openai-key',
         model: 'openai-model',
         timeout: 120,
         apiMode: 'responses',
         codexCli: true,
         apiProxy: true,
+      }, {
+        id: 'openai-profile',
+        name: 'OpenAI Profile',
+        provider: 'fal',
+        baseUrl: 'https://openai.example.com/v1',
+        apiKey: 'other-key',
+        model: 'other-model',
+        timeout: 300,
+        apiMode: 'images',
+        codexCli: false,
+        apiProxy: false,
       }],
     }
     const params = new URLSearchParams()
     params.set('settings', JSON.stringify(importedSettings))
 
-    const current = normalizeSettings(DEFAULT_SETTINGS)
+    const current = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [createDefaultOpenAIProfile({ id: 'rk-api', name: 'RK API', isDefault: true })],
+      activeProfileId: 'rk-api',
+    })
     const next = normalizeSettings({
       ...current,
       ...buildSettingsFromUrlParams(current, params),
@@ -648,8 +681,8 @@ describe('URL settings params', () => {
     expect(next.profiles[0]).toMatchObject({
       id: current.activeProfileId,
       provider: 'openai',
-      name: 'OpenAI Profile',
-      baseUrl: 'https://openai.example.com/v1',
+      name: 'RK API',
+      baseUrl: current.profiles[0].baseUrl,
       apiKey: 'openai-key',
       model: 'openai-model',
       timeout: 120,
@@ -659,7 +692,7 @@ describe('URL settings params', () => {
     })
   })
 
-  it('does not switch away from the default custom provider when only default config is shown', async () => {
+  it('does not patch a non-preset active profile when only preset config is shown', async () => {
     const { buildSettingsFromUrlParams } = await importPresetConfigOnlyUrlSettings()
     const customProvider = {
       id: 'custom-default',
@@ -730,42 +763,36 @@ describe('URL settings params', () => {
     expect(next.profiles[0]).toMatchObject({
       id: current.activeProfileId,
       provider: customProvider.id,
-      name: 'Patched Custom Default',
-      baseUrl: 'https://patched-custom.example.com/v1',
-      apiKey: 'patched-custom-key',
-      model: 'patched-custom-model',
-      timeout: 240,
+      name: 'Custom Default Profile',
+      baseUrl: 'https://custom-default.example.com/v1',
+      apiKey: 'custom-default-key',
+      model: 'custom-default-model',
+      timeout: DEFAULT_SETTINGS.timeout,
       apiMode: 'images',
-      codexCli: true,
+      codexCli: false,
     })
   })
 
   it('patches and activates the preset profile selected by profileId', async () => {
-    const { buildSettingsFromUrlParams } = await importPresetConfigOnlyUrlSettings({ multiple: true })
-    const profileA = createDefaultOpenAIProfile({
-      id: 'preset-a',
-      name: 'Preset A',
-      apiKey: 'key-a',
-      model: 'model-a',
+    const { buildSettingsFromUrlParams } = await importPresetConfigOnlyUrlSettings()
+    const profile = createDefaultOpenAIProfile({
+      id: 'rk-api',
+      name: 'RK API',
+      apiKey: 'rk-key',
+      model: 'rk-model',
       isDefault: true,
-    })
-    const profileB = createDefaultOpenAIProfile({
-      id: 'preset-b',
-      name: 'Preset B',
-      apiKey: 'key-b',
-      model: 'model-b',
     })
     const current = normalizeSettings({
       ...DEFAULT_SETTINGS,
-      profiles: [profileA, profileB],
-      activeProfileId: profileA.id,
+      profiles: [profile],
+      activeProfileId: profile.id,
     })
-    const params = new URLSearchParams('profileId=preset-b&apiUrl=https://preset-b.example.com/v1')
+    const params = new URLSearchParams('profileId=rk-api&apiKey=query-key')
     params.set('settings', JSON.stringify({
       profiles: [{
-        id: 'preset-b',
+        id: 'rk-api',
         provider: 'openai',
-        model: 'patched-model-b',
+        model: 'patched-model',
         timeout: 240,
         transparentBackgroundMethod: 'local',
       }],
@@ -776,17 +803,11 @@ describe('URL settings params', () => {
       ...buildSettingsFromUrlParams(current, params),
     })
 
-    expect(next.activeProfileId).toBe(profileB.id)
-    expect(next.profiles.find((profile) => profile.id === profileA.id)).toMatchObject({
-      name: 'Preset A',
-      apiKey: 'key-a',
-      model: 'model-a',
-    })
-    expect(next.profiles.find((profile) => profile.id === profileB.id)).toMatchObject({
-      name: 'Preset B',
-      baseUrl: 'https://preset-b.example.com/v1',
-      apiKey: 'key-b',
-      model: 'patched-model-b',
+    expect(next.activeProfileId).toBe(profile.id)
+    expect(next.profiles.find((item) => item.id === profile.id)).toMatchObject({
+      name: 'RK API',
+      apiKey: 'query-key',
+      model: 'patched-model',
       timeout: 240,
       transparentBackgroundMethod: 'local',
     })
@@ -794,7 +815,11 @@ describe('URL settings params', () => {
 
   it('applies the transparent background method in preset-only mode', async () => {
     const { buildSettingsFromUrlParams } = await importPresetConfigOnlyUrlSettings()
-    const current = normalizeSettings(DEFAULT_SETTINGS)
+    const current = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [createDefaultOpenAIProfile({ id: 'rk-api', name: 'RK API', isDefault: true })],
+      activeProfileId: 'rk-api',
+    })
     const next = normalizeSettings({
       ...current,
       ...buildSettingsFromUrlParams(current, new URLSearchParams('transparentBackgroundMethod=local')),
@@ -803,55 +828,34 @@ describe('URL settings params', () => {
     expect(next.profiles[0].transparentBackgroundMethod).toBe('local')
   })
 
-  it('preserves a trailing slash when overriding a custom preset API URL', async () => {
-    vi.resetModules()
-    vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
-    const apiProfiles = await import('./apiProfiles')
-    const presetConfig = await import('./presetConfig')
-    const provider = {
-      id: 'custom-preset',
-      name: 'Custom Preset',
-      submit: { path: 'custom/image-tasks' },
-    }
-    const profile = apiProfiles.createDefaultOpenAIProfile({
-      id: 'custom-preset-profile',
-      provider: provider.id,
-      baseUrl: 'https://old.example.com/',
-      apiMode: 'images',
+  it('keeps the preset API URL fixed in single preset mode', async () => {
+    const { buildSettingsFromUrlParams } = await importPresetConfigOnlyUrlSettings()
+    const current = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [createDefaultOpenAIProfile({ id: 'rk-api', name: 'RK API', isDefault: true })],
+      activeProfileId: 'rk-api',
     })
-    presetConfig.setPresetConfig({ customProviders: [provider], profiles: [profile] })
-    const { buildSettingsFromUrlParams } = await import('./urlSettings')
-    const current = apiProfiles.normalizeSettings({
-      ...apiProfiles.DEFAULT_SETTINGS,
-      customProviders: [provider],
-      profiles: [profile],
-      activeProfileId: profile.id,
-    })
-
-    const next = apiProfiles.normalizeSettings({
+    const next = normalizeSettings({
       ...current,
-      ...buildSettingsFromUrlParams(current, new URLSearchParams(
-        'profileId=custom-preset-profile&apiUrl=https://new.example.com/',
-      )),
+      ...buildSettingsFromUrlParams(current, new URLSearchParams('apiUrl=https://new.example.com/')),
     })
 
-    expect(next.profiles[0].baseUrl).toBe('https://new.example.com/')
+    expect(next.profiles[0].baseUrl).toBe(current.profiles[0].baseUrl)
   })
 
   it('ignores a same-ID settings profile with a conflicting provider in preset-only mode', async () => {
-    const { buildSettingsFromUrlParams } = await importPresetConfigOnlyUrlSettings({ multiple: true })
+    const { buildSettingsFromUrlParams } = await importPresetConfigOnlyUrlSettings()
     const current = normalizeSettings({
       ...DEFAULT_SETTINGS,
       profiles: [
-        createDefaultOpenAIProfile({ id: 'preset-a', isDefault: true }),
-        createDefaultOpenAIProfile({ id: 'preset-b', model: 'original-model' }),
+        createDefaultOpenAIProfile({ id: 'rk-api', name: 'RK API', isDefault: true, model: 'original-model' }),
       ],
-      activeProfileId: 'preset-a',
+      activeProfileId: 'rk-api',
     })
-    const params = new URLSearchParams('profileId=preset-b&apiKey=query-key')
+    const params = new URLSearchParams('profileId=rk-api&apiKey=query-key')
     params.set('settings', JSON.stringify({
       profiles: [{
-        id: 'preset-b',
+        id: 'rk-api',
         provider: 'fal',
         apiKey: 'json-key',
         model: 'conflicting-model',
@@ -863,8 +867,8 @@ describe('URL settings params', () => {
       ...buildSettingsFromUrlParams(current, params),
     })
 
-    expect(next.activeProfileId).toBe('preset-b')
-    expect(next.profiles.find((profile) => profile.id === 'preset-b')).toMatchObject({
+    expect(next.activeProfileId).toBe('rk-api')
+    expect(next.profiles.find((profile) => profile.id === 'rk-api')).toMatchObject({
       provider: 'openai',
       apiKey: 'query-key',
       model: 'original-model',
@@ -872,16 +876,15 @@ describe('URL settings params', () => {
   })
 
   it('does not fall back to another settings profile when the requested preset ID is missing', async () => {
-    const { buildSettingsFromUrlParams } = await importPresetConfigOnlyUrlSettings({ multiple: true })
+    const { buildSettingsFromUrlParams } = await importPresetConfigOnlyUrlSettings()
     const current = normalizeSettings({
       ...DEFAULT_SETTINGS,
       profiles: [
-        createDefaultOpenAIProfile({ id: 'preset-a', isDefault: true }),
-        createDefaultOpenAIProfile({ id: 'preset-b', model: 'original-model' }),
+        createDefaultOpenAIProfile({ id: 'rk-api', name: 'RK API', isDefault: true, model: 'original-model' }),
       ],
-      activeProfileId: 'preset-a',
+      activeProfileId: 'rk-api',
     })
-    const params = new URLSearchParams('profileId=preset-b&apiKey=query-key')
+    const params = new URLSearchParams('profileId=missing-preset&apiKey=query-key')
     params.set('settings', JSON.stringify({
       profiles: [{
         id: 'other-profile',
@@ -896,40 +899,44 @@ describe('URL settings params', () => {
       ...buildSettingsFromUrlParams(current, params),
     })
 
-    expect(next.activeProfileId).toBe('preset-b')
-    expect(next.profiles.find((profile) => profile.id === 'preset-b')).toMatchObject({
-      apiKey: 'query-key',
+    expect(next.activeProfileId).toBe('rk-api')
+    expect(next.profiles.find((profile) => profile.id === 'rk-api')).toMatchObject({
+      apiKey: '',
       model: 'original-model',
     })
   })
 
-  it('only applies the API key from URL parameters when preset parameters are locked', async () => {
+  it('keeps model and API mode URL overrides available in single preset mode', async () => {
     const { buildSettingsFromUrlParams } = await importPresetConfigOnlyUrlSettings({ locked: true })
-    const current = normalizeSettings(DEFAULT_SETTINGS)
+    const current = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [createDefaultOpenAIProfile({ id: 'rk-api', name: 'RK API', isDefault: true })],
+      activeProfileId: 'rk-api',
+    })
     const next = normalizeSettings({
       ...current,
       ...buildSettingsFromUrlParams(current, new URLSearchParams(
-        'apiUrl=https://changed.example.com/v1&apiKey=changed-key&model=changed-model&transparentBackgroundMethod=local',
+        'apiUrl=https://changed.example.com/v1&apiKey=changed-key&model=changed-model&apiMode=responses&transparentBackgroundMethod=local',
       )),
     })
 
     expect(next.profiles[0]).toMatchObject({
       baseUrl: current.profiles[0].baseUrl,
       apiKey: 'changed-key',
-      model: current.profiles[0].model,
-      transparentBackgroundMethod: 'api',
+      model: 'changed-model',
+      apiMode: 'responses',
+      transparentBackgroundMethod: 'local',
     })
   })
 
   it('ignores an invalid explicit profileId in preset-only mode', async () => {
-    const { buildSettingsFromUrlParams } = await importPresetConfigOnlyUrlSettings({ multiple: true })
+    const { buildSettingsFromUrlParams } = await importPresetConfigOnlyUrlSettings()
     const current = normalizeSettings({
       ...DEFAULT_SETTINGS,
       profiles: [
-        createDefaultOpenAIProfile({ id: 'preset-a', apiKey: 'key-a', isDefault: true }),
-        createDefaultOpenAIProfile({ id: 'preset-b', apiKey: 'key-b' }),
+        createDefaultOpenAIProfile({ id: 'rk-api', name: 'RK API', apiKey: 'key-a', isDefault: true }),
       ],
-      activeProfileId: 'preset-a',
+      activeProfileId: 'rk-api',
     })
 
     expect(buildSettingsFromUrlParams(current, new URLSearchParams(

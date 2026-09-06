@@ -4,7 +4,7 @@ import { useStore, retryTask } from '../store'
 import { ensureImageThumbnailCached, subscribeImageThumbnail } from '../lib/imageCache'
 import { formatImageRatio } from '../lib/size'
 import { getParamDisplay, ActualValueBadge } from '../lib/paramDisplay'
-import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL, getApiProfileDisplayName, getApiProviderLabel } from '../lib/apiProfiles'
+import { DEFAULT_IMAGES_MODEL, DEFAULT_RESPONSES_MODEL, DEFAULT_FAL_MODEL, getApiProfileDisplayName, getApiProviderLabel } from '../lib/apiProfiles'
 import { isAgentTaskPromptPending } from '../lib/taskPromptDisplay'
 import { CodeIcon, TransparentBgIcon } from './icons'
 import ViewportTooltip from './ViewportTooltip'
@@ -323,7 +323,11 @@ export default function TaskCard({
   const requestedOutputCount = Math.max(task.params.n, outputSuccessCount + outputErrorCount)
   const hasPartialOutputFailure = task.status === 'done' && outputErrorCount > 0
 
-  const defaultModelForProvider = task.apiProvider === 'fal' ? DEFAULT_FAL_MODEL : DEFAULT_IMAGES_MODEL
+  const defaultModelForProvider = task.apiProvider === 'fal'
+    ? DEFAULT_FAL_MODEL
+    : task.apiMode === 'responses'
+      ? DEFAULT_RESPONSES_MODEL
+      : DEFAULT_IMAGES_MODEL
   const showModel = task.apiModel && task.apiModel !== defaultModelForProvider
   const isInterrupted = task.status === 'error' && task.error === '已停止生成。'
   const taskApiName = getApiProfileDisplayName(task.apiProfileName, task.apiProvider) || (task.apiProvider ? getApiProviderLabel(settings, task.apiProvider) : '')

@@ -627,7 +627,10 @@ export const useStore = create<AppState>()(
         const settings = normalizeSettings(enforcePresetConfigPolicy(merged, {
           dismissedPresetProviderIds: effectiveDismissedPresetProviderIds,
         }))
-        const shouldClearReusedProfile = st.reusedTaskApiProfileId && settings.activeProfileId === st.reusedTaskApiProfileId
+        const shouldClearReusedProfile = st.reusedTaskApiProfileId && (
+          settings.activeProfileId === st.reusedTaskApiProfileId ||
+          (isPresetConfigOnlyEnabled() && !isPresetProfile(st.reusedTaskApiProfileId))
+        )
         return {
           settings,
           ...(shouldClearReusedProfile
@@ -658,7 +661,10 @@ export const useStore = create<AppState>()(
             normalizeSettings(transform?.(merged.settings) ?? merged.settings),
             { dismissedPresetProviderIds: effectiveDismissedPresetProviderIds },
           ))
-          const shouldClearReusedProfile = state.reusedTaskApiProfileId && settings.activeProfileId === state.reusedTaskApiProfileId
+          const shouldClearReusedProfile = state.reusedTaskApiProfileId && (
+            settings.activeProfileId === state.reusedTaskApiProfileId ||
+            (isPresetConfigOnlyEnabled() && !isPresetProfile(state.reusedTaskApiProfileId))
+          )
           return {
             settings,
             previousPresetConfig: getPresetConfig() ? merged.presetConfig : null,
@@ -1182,10 +1188,21 @@ function getCustomRecoveryProfile(settings: AppSettings, task: TaskRecord) {
   return null
 }
 
+function isPresetOnlyDisallowedTaskProfile(task: Pick<TaskRecord, 'apiProvider' | 'apiProfileId'>) {
+  if (!isPresetConfigOnlyEnabled()) return false
+  if (task.apiProvider && task.apiProvider !== 'openai') return true
+  if (task.apiProfileId) return !isPresetProfile(task.apiProfileId)
+  return false
+}
+
 export function getTaskApiProfile(settings: AppSettings, task: TaskRecord): ApiProfile | null {
   const normalized = normalizeSettings(settings)
   if (!task.apiProfileId) return null
-  return normalized.profiles.find((profile) => profile.id === task.apiProfileId) ?? null
+  const profile = normalized.profiles.find((profile) => profile.id === task.apiProfileId) ?? null
+  if (!profile) return null
+  if (isPresetConfigOnlyEnabled() && !isPresetProfile(profile.id)) return null
+  if (isPresetConfigOnlyEnabled() && task.apiProvider && task.apiProvider !== profile.provider) return null
+  return profile
 }
 
 function createSettingsForApiProfile(settings: AppSettings, profile: ApiProfile): AppSettings {
@@ -1225,7 +1242,10 @@ function getAgentProfileValidationError(settings: AppSettings): { profile: ApiPr
 
 function getReusedTaskApiProfile(settings: AppSettings, profileId: string | null): ApiProfile | null {
   if (!profileId) return null
-  return normalizeSettings(settings).profiles.find((profile) => profile.id === profileId) ?? null
+  const profile = normalizeSettings(settings).profiles.find((item) => item.id === profileId) ?? null
+  if (!profile) return null
+  if (isPresetConfigOnlyEnabled() && !isPresetProfile(profile.id)) return null
+  return profile
 }
 
 function getTaskApiProfileName(task: TaskRecord) {
@@ -1409,6 +1429,15 @@ async function recoverFalTask(taskId: string) {
 
   const profile = getFalRecoveryProfile(settings, task)
   if (!profile) {
+    if (isPresetOnlyDisallowedTaskProfile(task)) {
+      clearFalRecoveryTimer(taskId)
+      updateTaskInStore(taskId, {
+        ...createTaskErrorPatch(task, '当前部署仅允许 RK API 配置，无法恢复此任务。', Date.now()),
+        falRecoverable: false,
+      })
+      if (isAgentTask(task)) void continueRecoveredAgentRound(taskId)
+      return
+    }
     scheduleFalRecovery(taskId)
     return
   }
@@ -3514,6 +3543,15 @@ async function executeTask(taskId: string) {
   const task = useStore.getState().tasks.find((t) => t.id === taskId)
   if (!task) return
   const taskProfile = getTaskApiProfile(settings, task)
+  if (isPresetOnlyDisallowedTaskProfile(task)) {
+    updateTaskInStore(taskId, {
+      ...createTaskErrorPatch(task, '当前部署仅允许 RK API 配置，无法执行此任务。', Date.now()),
+      falRecoverable: false,
+      customRecoverable: false,
+    })
+    if (isAgentTask(task)) void continueRecoveredAgentRound(taskId)
+    return
+  }
   if (!taskProfile && task.apiProfileId) {
     updateTaskInStore(taskId, {
       ...createTaskErrorPatch(task, '找不到此任务所使用的 API 配置。', Date.now()),
@@ -4269,6 +4307,15 @@ async function recoverCustomTask(taskId: string) {
   const profile = getCustomRecoveryProfile(settings, task)
   const customProvider = profile ? getCustomProviderDefinition(settings, profile.provider) : null
   if (!profile || !customProvider?.poll) {
+    if (isPresetOnlyDisallowedTaskProfile(task)) {
+      clearCustomRecoveryTimer(taskId)
+      updateTaskInStore(taskId, {
+        ...createTaskErrorPatch(task, '当前部署仅允许 RK API 配置，无法恢复此任务。', Date.now()),
+        customRecoverable: false,
+      })
+      if (isAgentTask(task)) void continueRecoveredAgentRound(taskId)
+      return
+    }
     scheduleCustomRecovery(taskId)
     return
   }
@@ -4398,6 +4445,10 @@ export async function importData(input: File | File[], options: ImportOptions = 
   try {
     const state = useStore.getState()
     if (options.importTasks && hasActiveDataOperations(state.tasks, state.agentConversations)) throw new Error('当前有任务正在进行，请完成或停止后再导入。')
+    const configImportRequested = Boolean(options.importConfig)
+    const configImportBlocked = configImportRequested && isPresetConfigOnlyEnabled()
+    if (configImportBlocked && !options.importTasks) throw new Error('当前部署已禁用配置导入')
+    const allowConfigImport = configImportRequested && !configImportBlocked
     const files = Array.isArray(input) ? input : [input]
     if (!files.length) throw new Error('没有选择备份文件。')
     if (files.some((file) => file.size >= MAX_EXPORT_ZIP_BYTES)) {
@@ -4426,7 +4477,7 @@ export async function importData(input: File | File[], options: ImportOptions = 
     }
 
     const settingsManifests = selected.filter((part) => part.manifest.settings)
-    if (options.importConfig && !options.importTasks && !settingsManifests.length) throw new Error('所选备份不包含配置数据。')
+    if (allowConfigImport && !options.importTasks && !settingsManifests.length) throw new Error('所选备份不包含配置数据。')
     const importedTasks = selected.flatMap((part) => part.manifest.tasks ?? [])
     const importedAgentConversations = selected.flatMap((part) => part.manifest.agentConversations ?? [])
     const hasTaskData = selected.some((part) => part.manifest.tasks != null || part.manifest.imageFiles != null)
@@ -4508,7 +4559,7 @@ export async function importData(input: File | File[], options: ImportOptions = 
       scheduleThumbnailBackfill(importedImageIds)
     }
 
-    if (options.importConfig && settingsManifests.length) {
+    if (allowConfigImport && settingsManifests.length) {
       const state = useStore.getState()
       const providerIds = new Set(settingsManifests.flatMap((part) =>
         part.manifest.settings?.customProviders.map((provider) => provider.id) ?? [],
@@ -4535,7 +4586,7 @@ export async function importData(input: File | File[], options: ImportOptions = 
     let msg = '数据已成功导入'
     if (options.importTasks && hasTaskData) {
       msg = `已导入 ${importedTasks.length} 个任务`
-    } else if (options.importConfig && settingsManifests.length) {
+    } else if (allowConfigImport && settingsManifests.length) {
       msg = '配置已成功导入'
     }
 

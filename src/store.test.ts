@@ -2608,6 +2608,88 @@ describe('data import', () => {
     expect(apiKeys.filter((apiKey) => apiKey === 'shared-key')).toHaveLength(1)
   })
 
+  it('does not import configuration data in RK preset-only mode', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
+    const apiProfiles = await import('./lib/apiProfiles')
+    const presetConfig = await import('./lib/presetConfig')
+    const store = await import('./store')
+    const preset = apiProfiles.createDefaultOpenAIProfile({
+      id: 'rk-preset',
+      name: 'RK API',
+      baseUrl: 'https://rk.example.com/v1',
+      apiKey: 'rk-key',
+      model: 'gpt-image-2',
+      isDefault: true,
+    })
+    presetConfig.setPresetConfig({ customProviders: [], profiles: [preset] })
+    store.useStore.setState({
+      settings: apiProfiles.normalizeSettings({ profiles: [preset], activeProfileId: preset.id }),
+    })
+    const importedProfile = apiProfiles.createDefaultOpenAIProfile({
+      id: 'imported-profile',
+      name: 'Imported',
+      baseUrl: 'https://other.example.com/v1',
+      apiKey: 'other-key',
+      model: 'other-model',
+    })
+
+    const imported = await store.importData(importFile({
+      version: 3,
+      exportedAt: new Date(0).toISOString(),
+      settings: apiProfiles.normalizeSettings({
+        ...apiProfiles.DEFAULT_SETTINGS,
+        profiles: [importedProfile],
+        activeProfileId: importedProfile.id,
+      }),
+    }), { importConfig: true, importTasks: false })
+
+    expect(imported).toBe(false)
+    expect(store.useStore.getState().settings.profiles).toEqual([expect.objectContaining({ id: preset.id })])
+    expect(store.useStore.getState().settings.profiles.some((profile) => profile.id === importedProfile.id)).toBe(false)
+  })
+
+  it('drops stale non-preset profiles and providers when preset-only settings are reapplied', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
+    const apiProfiles = await import('./lib/apiProfiles')
+    const presetPolicy = await import('./lib/presetConfig')
+    const store = await import('./store')
+    const rkProfile = apiProfiles.createDefaultOpenAIProfile({
+      id: 'rk-api',
+      name: 'RK API',
+      baseUrl: 'https://rk.example.com/v1',
+      apiKey: 'rk-key',
+      model: 'gpt-image-2',
+      isDefault: true,
+    })
+    const staleProvider = { id: 'stale-provider', name: 'Stale Provider', submit: { path: 'images/generations' } }
+    const staleProfile = apiProfiles.createDefaultFalProfile({
+      id: 'stale-profile',
+      name: 'Stale Profile',
+      provider: staleProvider.id,
+    })
+    presetPolicy.setPresetConfig({ customProviders: [], profiles: [rkProfile] })
+    store.useStore.setState({
+      settings: apiProfiles.normalizeSettings({
+        ...apiProfiles.DEFAULT_SETTINGS,
+        profiles: [rkProfile, staleProfile],
+        customProviders: [staleProvider],
+        activeProfileId: staleProfile.id,
+      }),
+    })
+
+    await store.useStore.getState().setPresetImportedSettings({
+      customProviders: [],
+      profiles: [rkProfile],
+    })
+
+    const nextSettings = store.useStore.getState().settings
+    expect(nextSettings.profiles.map((profile) => profile.id)).toEqual([rkProfile.id])
+    expect(nextSettings.customProviders).toEqual([])
+    expect(nextSettings.activeProfileId).toBe(rkProfile.id)
+  })
+
   it('preserves internal IDs when restoring config', async () => {
     const provider = {
       id: 'backup-provider-id',
@@ -5160,6 +5242,37 @@ describe('reused task API profile', () => {
       apiProvider: 'fal',
       apiProfileName: falProfile.name,
       apiModel: falProfile.model,
+    }))
+
+    expect(resolved).toBeNull()
+  })
+
+  it('blocks non-preset task profiles in preset-only mode', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
+    const apiProfiles = await import('./lib/apiProfiles')
+    const presetPolicy = await import('./lib/presetConfig')
+    const store = await import('./store')
+    const rkProfile = apiProfiles.createDefaultOpenAIProfile({
+      id: 'rk-api',
+      name: 'RK API',
+      isDefault: true,
+      baseUrl: 'https://rk.example.com/v1',
+    })
+    presetPolicy.setPresetConfig({ customProviders: [], profiles: [rkProfile] })
+    store.useStore.setState({
+      settings: apiProfiles.normalizeSettings({
+        ...apiProfiles.DEFAULT_SETTINGS,
+        profiles: [rkProfile, apiProfiles.createDefaultFalProfile({ id: 'fal-profile' })],
+        activeProfileId: rkProfile.id,
+      }),
+    })
+
+    const resolved = store.getTaskApiProfile(store.useStore.getState().settings, task({
+      apiProvider: 'fal',
+      apiProfileId: 'fal-profile',
+      apiProfileName: 'fal-profile',
+      apiModel: 'openai/gpt-image-2',
     }))
 
     expect(resolved).toBeNull()

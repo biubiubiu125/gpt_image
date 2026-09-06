@@ -48,7 +48,7 @@ function getSettingsJsonTextFromUrl(value: string): string | null {
   }
 }
 
-export async function loadCustomProviderSettingsFromUrl(configUrl: string): Promise<ImportedProviderSettings | null> {
+export function loadCustomProviderSettingsFromUrl(configUrl: string): ImportedProviderSettings | null {
   const url = configUrl.trim()
   if (!url) return null
 

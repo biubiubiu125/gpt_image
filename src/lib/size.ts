@@ -1,6 +1,7 @@
 const SIZE_PATTERN = /^\s*(\d+)\s*[xX×]\s*(\d+)\s*$/
 const RATIO_PATTERN = /^\s*(\d+(?:\.\d+)?)\s*[:xX×]\s*(\d+(?:\.\d+)?)\s*$/
-const SIZE_MULTIPLE = 16
+const NORMAL_SIZE_MULTIPLE = 1
+const CODEX_CLI_SIZE_MULTIPLE = 16
 const MAX_EDGE = 3840
 const MAX_ASPECT_RATIO = 3
 const MIN_PIXELS = 655_360
@@ -22,18 +23,18 @@ function ceilToMultiple(value: number, multiple: number) {
   return Math.max(multiple, Math.ceil(value / multiple) * multiple)
 }
 
-function normalizeDimensions(width: number, height: number) {
-  let normalizedWidth = roundToMultiple(width, SIZE_MULTIPLE)
-  let normalizedHeight = roundToMultiple(height, SIZE_MULTIPLE)
+function normalizeDimensions(width: number, height: number, multiple = NORMAL_SIZE_MULTIPLE) {
+  let normalizedWidth = roundToMultiple(width, multiple)
+  let normalizedHeight = roundToMultiple(height, multiple)
 
   const scaleToFit = (scale: number) => {
-    normalizedWidth = floorToMultiple(normalizedWidth * scale, SIZE_MULTIPLE)
-    normalizedHeight = floorToMultiple(normalizedHeight * scale, SIZE_MULTIPLE)
+    normalizedWidth = floorToMultiple(normalizedWidth * scale, multiple)
+    normalizedHeight = floorToMultiple(normalizedHeight * scale, multiple)
   }
 
   const scaleToFill = (scale: number) => {
-    normalizedWidth = ceilToMultiple(normalizedWidth * scale, SIZE_MULTIPLE)
-    normalizedHeight = ceilToMultiple(normalizedHeight * scale, SIZE_MULTIPLE)
+    normalizedWidth = ceilToMultiple(normalizedWidth * scale, multiple)
+    normalizedHeight = ceilToMultiple(normalizedHeight * scale, multiple)
   }
 
   for (let i = 0; i < 4; i++) {
@@ -43,9 +44,9 @@ function normalizeDimensions(width: number, height: number) {
     }
 
     if (normalizedWidth / normalizedHeight > MAX_ASPECT_RATIO) {
-      normalizedWidth = floorToMultiple(normalizedHeight * MAX_ASPECT_RATIO, SIZE_MULTIPLE)
+      normalizedWidth = floorToMultiple(normalizedHeight * MAX_ASPECT_RATIO, multiple)
     } else if (normalizedHeight / normalizedWidth > MAX_ASPECT_RATIO) {
-      normalizedHeight = floorToMultiple(normalizedWidth * MAX_ASPECT_RATIO, SIZE_MULTIPLE)
+      normalizedHeight = floorToMultiple(normalizedWidth * MAX_ASPECT_RATIO, multiple)
     }
 
     const pixels = normalizedWidth * normalizedHeight
@@ -75,7 +76,7 @@ export function normalizeCodexCliImageSize(size: string) {
 
   const originalWidth = Number(match[1])
   const originalHeight = Number(match[2])
-  const normalized = normalizeDimensions(originalWidth, originalHeight)
+  const normalized = normalizeDimensions(originalWidth, originalHeight, CODEX_CLI_SIZE_MULTIPLE)
   if (normalized.width * normalized.height > MAX_1K_PIXELS) {
     return calculateImageSize('1K', `${normalized.width}:${normalized.height}`) ?? `${normalized.width}x${normalized.height}`
   }
@@ -258,16 +259,16 @@ export function calculateImageSize(tier: SizeTier, ratio: string) {
   let bestHeight = 0
   let bestPixels = 0
 
-  for (let w = SIZE_MULTIPLE; w <= MAX_EDGE; w += SIZE_MULTIPLE) {
+  for (let w = CODEX_CLI_SIZE_MULTIPLE; w <= MAX_EDGE; w += CODEX_CLI_SIZE_MULTIPLE) {
     const idealH = w / targetRatio
     // 尝试 floor 和 ceil 对齐到 16 的倍数，取像素更大且合法的那个
     const candidates = [
-      Math.floor(idealH / SIZE_MULTIPLE) * SIZE_MULTIPLE,
-      Math.ceil(idealH / SIZE_MULTIPLE) * SIZE_MULTIPLE,
+      Math.floor(idealH / CODEX_CLI_SIZE_MULTIPLE) * CODEX_CLI_SIZE_MULTIPLE,
+      Math.ceil(idealH / CODEX_CLI_SIZE_MULTIPLE) * CODEX_CLI_SIZE_MULTIPLE,
     ]
 
     for (const h of candidates) {
-      if (h < SIZE_MULTIPLE || h > MAX_EDGE) continue
+      if (h < CODEX_CLI_SIZE_MULTIPLE || h > MAX_EDGE) continue
 
       const pixels = w * h
       if (pixels > pixelBudget || pixels < MIN_PIXELS) continue

@@ -14,6 +14,10 @@ let defaultPresetProfileId: string | null = null
 export function setPresetConfig(settings: Pick<AppSettings, 'customProviders' | 'profiles'> & {
   presetProfileFields?: Record<string, string[]>
 } | null) {
+  if (SHOW_PRESET_CONFIG_ONLY) {
+    const error = validatePresetOnlyConfig(settings)
+    if (error) throw new Error(error)
+  }
   presetProfiles = settings?.profiles.map((profile) => ({ ...profile })) ?? []
   presetProviders = settings?.customProviders.map((provider) => ({ ...provider })) ?? []
   presetProfileFields = settings?.presetProfileFields
@@ -66,11 +70,27 @@ export function isPresetConfigOnlyEnabled() {
 }
 
 export function isPresetConfigParamsLocked() {
-  return LOCK_PRESET_CONFIG_PARAMS && presetProfiles.length > 0
+  // RK 单配置显式禁用模式只锁定配置身份和供应商管理，模型、API 接口等参数仍需可调。
+  // 因此该模式优先于旧的全参数锁定开关，避免两套部署策略叠加后意外锁死模型。
+  return LOCK_PRESET_CONFIG_PARAMS && !isPresetConfigOnlyEnabled() && presetProfiles.length > 0
 }
 
 export function isPresetConfigDeletionPrevented() {
   return (PREVENT_PRESET_CONFIG_DELETION || SHOW_PRESET_CONFIG_ONLY) && presetProfiles.length > 0
+}
+
+export function validatePresetOnlyConfig(settings: Pick<AppSettings, 'customProviders' | 'profiles'> | null): string | null {
+  if (!settings) return 'RK API 单配置模式未加载到任何预置配置'
+  if (!Array.isArray(settings.profiles) || settings.profiles.length !== 1) {
+    return 'RK API 单配置模式仅支持一个预置配置'
+  }
+  if ((settings.customProviders?.length ?? 0) > 0) {
+    return 'RK API 单配置模式不允许自定义服务商'
+  }
+  if (settings.profiles[0]?.provider !== 'openai') {
+    return 'RK API 单配置模式仅支持 RK API 预置配置'
+  }
+  return null
 }
 
 export function isPresetProfileLocked(id: string) {
@@ -102,10 +122,19 @@ export function enforcePresetConfigPolicy(
   const profiles = settings.profiles.map((profile) => {
     const preset = presetProfilesById.get(profile.id)
     if (!preset) return profile.isDefault ? { ...profile, isDefault: undefined } : profile
+    const nextProfile = paramsLocked
+      ? preset
+      : presetConfigOnly
+        ? {
+            ...profile,
+            name: preset.name,
+            provider: preset.provider,
+            baseUrl: preset.baseUrl,
+          }
+        : profile
     return {
-      ...(paramsLocked ? preset : profile),
+      ...nextProfile,
       apiKey: profile.apiKey,
-      provider: paramsLocked || presetConfigOnly ? preset.provider : profile.provider,
       isDefault: profile.id === defaultPresetProfileId ? true : undefined,
     }
   })
@@ -131,11 +160,17 @@ export function enforcePresetConfigPolicy(
   const agentImageProfileId = presetConfigOnly && (!settings.agentImageProfileId || !profileIds.has(settings.agentImageProfileId))
     ? defaultPresetProfileId ?? presetProfiles[0]?.id ?? null
     : settings.agentImageProfileId
+  const nextProfiles = presetConfigOnly
+    ? profiles.filter((profile) => profileIds.has(profile.id))
+    : profiles
+  const nextCustomProviders = presetConfigOnly
+    ? []
+    : customProviders
 
   return {
     ...settings,
-    customProviders,
-    profiles,
+    customProviders: nextCustomProviders,
+    profiles: nextProfiles,
     activeProfileId,
     agentTextProfileId,
     agentImageProfileId,

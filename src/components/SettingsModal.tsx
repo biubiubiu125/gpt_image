@@ -37,6 +37,7 @@ import {
   isPresetConfigOnlyEnabled,
   isPresetProvider,
   isPresetProviderDeletionPrevented,
+  isPresetProfile,
   isPresetProfileLocked,
   isPresetProviderLocked,
 } from '../lib/presetConfig'
@@ -225,12 +226,13 @@ export default function SettingsModal() {
   const presetConfigOnly = isPresetConfigOnlyEnabled()
   const presetDeletionPrevented = isPresetConfigDeletionPrevented()
   const presetProfileIds = getPresetProfileIds()
+  const activeProfile = draft.profiles.find((profile) => profile.id === draft.activeProfileId) ?? draft.profiles[0] ?? getActiveApiProfile(draft)
+  const presetIdentityLocked = presetConfigOnly && isPresetProfile(activeProfile.id)
   const visibleProfiles = presetConfigOnly
     ? draft.profiles.filter((profile) => presetProfileIds.has(profile.id))
     : draft.profiles
-  const profileMenuDisabled = presetConfigOnly && visibleProfiles.length <= 1
+  const profileMenuDisabled = visibleProfiles.length === 0
   const defaultProfileId = getDefaultPresetProfileId() ?? getDefaultApiProfileId(draft)
-  const activeProfile = draft.profiles.find((profile) => profile.id === draft.activeProfileId) ?? draft.profiles[0] ?? getActiveApiProfile(draft)
   const activePresetDescription = getPresetProfileDescription(activeProfile.id)
   const activeProfileLocked = isPresetProfileLocked(activeProfile.id)
   const activeProviderIsOpenAICompatible = isOpenAICompatibleProvider(draft, activeProfile.provider)
@@ -244,33 +246,55 @@ export default function SettingsModal() {
   const apiProxyEnabled = apiProxyAvailable && activeProfileApiProxyEligible && apiProxyChecked
   const defaultProviderOrder = ['openai', 'sb2api-async', 'fal', ...draft.customProviders.map(p => p.id)]
   const providerOrder = draft.providerOrder || defaultProviderOrder
+  const presetOnlyLockTooltip = '当前部署仅允许 RK API'
+  const presetParamsLockTooltip = '当前预置配置参数已锁定'
+  const activeProfileLockTooltip = presetConfigOnly ? presetOnlyLockTooltip : activeProfileLocked ? presetParamsLockTooltip : ''
 
   const unorderedProviderOptions = [
-    { label: API_BRAND_NAME, value: 'openai', draggable: true },
-    { label: 'sub2api（异步）', value: 'sb2api-async', draggable: true },
-    { label: 'fal.ai', value: 'fal', draggable: true },
+    { label: API_BRAND_NAME, value: 'openai', draggable: true, disabled: presetConfigOnly, disabledReason: presetOnlyLockTooltip },
+    { label: 'sub2api（异步）', value: 'sb2api-async', draggable: true, disabled: presetConfigOnly, disabledReason: presetOnlyLockTooltip },
+    { label: 'fal.ai', value: 'fal', draggable: true, disabled: presetConfigOnly, disabledReason: presetOnlyLockTooltip },
     ...draft.customProviders.map((provider) => {
+      const providerLocked = isPresetProviderLocked(provider.id)
+      const providerDeletionPrevented = isPresetProviderDeletionPrevented(provider.id, draft.profiles)
+      const providerDisabledReason = presetConfigOnly
+        ? presetOnlyLockTooltip
+        : providerLocked
+          ? presetParamsLockTooltip
+          : undefined
+      const deleteDisabledReason = presetConfigOnly
+        ? presetOnlyLockTooltip
+        : providerDeletionPrevented
+          ? '预置服务商不可删除'
+          : undefined
       const actions = [
-        ...(!presetConfigOnly && !isPresetProviderLocked(provider.id) ? [{ label: '编辑', onClick: () => openEditCustomProvider(provider) }] : []),
-        ...(!presetConfigOnly && !isPresetProviderDeletionPrevented(provider.id, draft.profiles) ? [{
+        {
+          label: '编辑',
+          disabled: presetConfigOnly || providerLocked,
+          disabledReason: providerDisabledReason,
+          onClick: () => openEditCustomProvider(provider),
+        },
+        {
           label: '删除',
           variant: 'danger' as const,
+          disabled: presetConfigOnly || providerDeletionPrevented,
+          disabledReason: deleteDisabledReason,
           onClick: () => confirmDeleteCustomProvider(provider),
-        }] : []),
+        },
       ]
       return {
         label: provider.name,
         value: provider.id,
         draggable: true,
-        actions: actions.length ? actions : undefined,
+        disabled: presetConfigOnly,
+        disabledReason: presetOnlyLockTooltip,
+        actions,
       }
     }),
   ]
 
   const providerOptions = [
-    ...(!presetConfigOnly && !activeProfileLocked
-      ? [{ label: '创建自定义服务商', value: ADD_CUSTOM_PROVIDER_VALUE, variant: 'action' as const }]
-      : []),
+    { label: '创建自定义服务商', value: ADD_CUSTOM_PROVIDER_VALUE, variant: 'action' as const, disabled: presetConfigOnly, disabledReason: presetOnlyLockTooltip },
     ...unorderedProviderOptions.sort((a, b) => {
       const aIndex = providerOrder.indexOf(String(a.value))
       const bIndex = providerOrder.indexOf(String(b.value))
@@ -291,7 +315,9 @@ export default function SettingsModal() {
     ? `已开启 ${enabledZipDownloadRouteCount} 项使用压缩包进行批量下载的途径`
     : '未开启任何使用压缩包进行批量下载的途径'
 
-  const agentProfiles = (presetConfigOnly ? visibleProfiles : draft.profiles)
+  const agentProfiles = (presetConfigOnly
+    ? visibleProfiles.filter((profile) => presetProfileIds.has(profile.id))
+    : draft.profiles)
     .filter((profile) => {
       if (!profile.apiKey.trim()) return false
       if (profile.baseUrl.trim() || profile.provider === 'fal') return true
@@ -503,6 +529,7 @@ export default function SettingsModal() {
 
   const copyProfileImportUrl = async (profile: ApiProfile, options: ProfileImportUrlOptions) => {
     try {
+      if (presetConfigOnly) return
       await copyTextToClipboard(createProfileImportUrl(profile, options))
       showToast(options.includeApiKey ? '导入 URL 已复制（包含 API Key）' : '导入 URL 已复制', 'success')
       setCopyImportUrlProfile(null)
@@ -512,6 +539,7 @@ export default function SettingsModal() {
   }
 
   const confirmCopyProfileImportUrl = (profile: ApiProfile) => {
+    if (presetConfigOnly) return
     setShowProfileMenu(false)
     setProfileImportUrlTooltipVisible(false)
     setCopyImportUrlProfile(profile)
@@ -523,8 +551,14 @@ export default function SettingsModal() {
       profiles: draft.profiles.map((profile) => profile.id === activeProfile.id ? { ...profile, ...patch } : profile),
     })
 
+  const hasIdentityPatch = (patch: Partial<ApiProfile>) =>
+    patch.name !== undefined ||
+    patch.provider !== undefined ||
+    patch.baseUrl !== undefined
+
   const updateActiveProfile = (patch: Partial<ApiProfile>, commit = false) => {
     if (activeProfileLocked && (Object.keys(patch).length !== 1 || patch.apiKey === undefined)) return
+    if (presetIdentityLocked && hasIdentityPatch(patch)) return
     const nextDraft = getDraftWithActiveProfilePatch(patch)
     setDraft(nextDraft)
     if (commit) commitSettings(nextDraft)
@@ -532,6 +566,7 @@ export default function SettingsModal() {
 
   const commitActiveProfilePatch = (patch: Partial<ApiProfile>) => {
     if (activeProfileLocked && (Object.keys(patch).length !== 1 || patch.apiKey === undefined)) return
+    if (presetIdentityLocked && hasIdentityPatch(patch)) return
     const nextDraft = getDraftWithActiveProfilePatch(patch)
     commitSettings(nextDraft)
   }
@@ -762,6 +797,7 @@ export default function SettingsModal() {
   }
 
   const handleProfileDragOver = (e: React.DragEvent, targetId: string) => {
+    if (presetConfigOnly) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
 
@@ -908,6 +944,7 @@ export default function SettingsModal() {
   }
 
   const handleProviderReorder = (sourceValue: string | number, targetValue: string | number, position: 'before' | 'after' | null) => {
+    if (presetConfigOnly || activeProfileLocked) return
     const currentOrder = draft.providerOrder || ['openai', 'sb2api-async', 'fal', ...draft.customProviders.map(p => p.id)]
     const sourceIndex = currentOrder.indexOf(String(sourceValue))
     const targetIndex = currentOrder.indexOf(String(targetValue))
@@ -1048,6 +1085,10 @@ export default function SettingsModal() {
   }
 
   const handleCustomProviderJsonPaste = async () => {
+    if (presetConfigOnly) {
+      showToast(presetOnlyLockTooltip, 'error')
+      return
+    }
     setIsImportingJson(true)
     try {
       const text = await navigator.clipboard.readText()
@@ -1233,6 +1274,7 @@ export default function SettingsModal() {
                       <button
                         type="button"
                         onClick={() => confirmCopyProfileImportUrl(activeProfile)}
+                        disabled={presetConfigOnly}
                         onMouseEnter={() => setProfileImportUrlTooltipVisible(true)}
                         onMouseLeave={() => setProfileImportUrlTooltipVisible(false)}
                         onFocus={() => setProfileImportUrlTooltipVisible(true)}
@@ -1246,19 +1288,20 @@ export default function SettingsModal() {
                         }}
                         onTouchEnd={clearProfileImportUrlTooltipTimer}
                         onTouchCancel={clearProfileImportUrlTooltipTimer}
-                        className="flex h-5 w-5 items-center justify-center rounded-md text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/[0.08] dark:hover:text-gray-200"
+                        className="flex h-5 w-5 items-center justify-center rounded-md text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/[0.08] dark:hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400"
                         aria-label={`复制导入配置「${activeProfile.name}」的 URL`}
+                        title={presetConfigOnly ? presetOnlyLockTooltip : '复制导入 URL'}
                       >
                         <LinkIcon className="h-3.5 w-3.5" />
                       </button>
                       <ViewportTooltip visible={profileImportUrlTooltipVisible} className="whitespace-nowrap">
-                        复制导入 URL
+                        {presetConfigOnly ? presetOnlyLockTooltip : '复制导入 URL'}
                       </ViewportTooltip>
                     </span>
-                    {!presetConfigOnly && <span className="relative inline-flex">
+                    <span className="relative inline-flex">
                       <button
                         type="button"
-                        onClick={duplicateActiveProfile}
+                        onClick={presetConfigOnly || activeProfileLocked ? undefined : duplicateActiveProfile}
                         onMouseEnter={() => setDuplicateProfileTooltipVisible(true)}
                         onMouseLeave={() => setDuplicateProfileTooltipVisible(false)}
                         onFocus={() => setDuplicateProfileTooltipVisible(true)}
@@ -1272,15 +1315,17 @@ export default function SettingsModal() {
                         }}
                         onTouchEnd={clearDuplicateProfileTooltipTimer}
                         onTouchCancel={clearDuplicateProfileTooltipTimer}
-                        className="flex h-5 w-5 items-center justify-center rounded-md text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/[0.08] dark:hover:text-gray-200"
+                        disabled={presetConfigOnly || activeProfileLocked}
+                        title={activeProfileLockTooltip || '复制当前配置'}
+                        className="flex h-5 w-5 items-center justify-center rounded-md text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/[0.08] dark:hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400"
                         aria-label={`复制一份配置「${activeProfile.name}」`}
                       >
                         <CopyIcon className="h-3.5 w-3.5" />
                       </button>
                       <ViewportTooltip visible={duplicateProfileTooltipVisible} className="whitespace-nowrap">
-                        复制当前配置
+                        {activeProfileLockTooltip || '复制当前配置'}
                       </ViewportTooltip>
-                    </span>}
+                    </span>
                   </div>
                   <div ref={profileMenuRef} className="relative">
                     <button
@@ -1293,7 +1338,7 @@ export default function SettingsModal() {
                       }}
                       disabled={profileMenuDisabled}
                       className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 ${profileMenuDisabled ? 'cursor-not-allowed opacity-70' : 'hover:bg-gray-50 dark:hover:bg-white/[0.06]'}`}
-                      title={activeProfile.name}
+                      title={activeProfileLockTooltip || activeProfile.name}
                     >
                       <span className="flex min-w-0 items-center gap-2">
                         <span className="min-w-0 truncate">{activeProfile.name}</span>
@@ -1310,19 +1355,22 @@ export default function SettingsModal() {
                           className="absolute right-0 top-full z-50 mt-1.5 w-full overflow-hidden overflow-y-auto rounded-xl border border-gray-200/60 bg-white/95 py-1 shadow-[0_8px_30px_rgb(0,0,0,0.12)] ring-1 ring-black/5 backdrop-blur-xl animate-dropdown-down dark:border-white/[0.08] dark:bg-gray-900/95 dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] dark:ring-white/10 custom-scrollbar"
                           style={{ maxHeight: profileMenuMaxHeight }}
                         >
-                          {!presetConfigOnly && <button
+                          <button
                             type="button"
                             onClick={(e) => {
                               e.preventDefault()
+                              if (presetConfigOnly || activeProfileLocked) return
                               createNewProfile()
                             }}
-                            className="flex w-full cursor-pointer items-center justify-between gap-2 px-3 py-2 text-left text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-500/10"
+                            disabled={presetConfigOnly || activeProfileLocked}
+                            className="flex w-full cursor-pointer items-center justify-between gap-2 px-3 py-2 text-left text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-500/10 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent dark:disabled:text-gray-600"
+                            title={activeProfileLockTooltip || '创建新配置'}
                           >
                             <span className="truncate font-semibold">创建新配置</span>
                             <span className="flex h-5 w-5 shrink-0 items-center justify-center">
                               <PlusIcon className="h-4 w-4" />
                             </span>
-                          </button>}
+                          </button>
                           <div>
                             {visibleProfiles.map((profile) => {
                               const isDefaultProfile = profile.id === defaultProfileId
@@ -1345,9 +1393,10 @@ export default function SettingsModal() {
                                     // 点击拖拽柄时不切换配置。
                                     if ((e.target as HTMLElement).closest('[data-drag-handle]')) return
                                     e.preventDefault()
+                                    if (presetConfigOnly) return
                                     switchProfile(profile.id)
                                   }}
-                                  className={`relative group flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-xs transition-colors ${draggedProfileId === profile.id ? 'opacity-40 bg-gray-100 dark:bg-white/[0.04]' : profile.id === activeProfile.id ? 'bg-blue-50 font-medium text-blue-600 dark:bg-blue-500/10 dark:text-blue-400' : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/[0.06]'}`}
+                                  className={`relative group flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors ${draggedProfileId === profile.id ? 'opacity-40 bg-gray-100 dark:bg-white/[0.04]' : profile.id === activeProfile.id ? 'bg-blue-50 font-medium text-blue-600 dark:bg-blue-500/10 dark:text-blue-400' : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/[0.06]'} ${presetConfigOnly ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                                 >
                                 {dragOverProfileId === profile.id && dragDropPosition === 'before' && draggedProfileId !== profile.id && (
                                   <div className="absolute -top-[1px] left-0 right-0 h-[2px] bg-blue-500 rounded-full z-40 shadow-sm pointer-events-none" />
@@ -1356,16 +1405,15 @@ export default function SettingsModal() {
                                   <div className="absolute -bottom-[1px] left-0 right-0 h-[2px] bg-blue-500 rounded-full z-40 shadow-sm pointer-events-none" />
                                 )}
                                 <div className="flex min-w-0 flex-1 items-center gap-2 pr-2">
-                                  {!presetConfigOnly && (
-                                    <div
-                                      data-drag-handle
-                                      className="flex cursor-grab active:cursor-grabbing items-center justify-center text-gray-400 opacity-60 transition-opacity hover:opacity-100 dark:text-gray-500"
-                                      style={{ touchAction: 'none' }}
-                                      title="拖拽排序"
-                                    >
-                                      <DragHandleIcon className="h-3.5 w-3.5" />
-                                    </div>
-                                  )}
+                                  <div
+                                    data-drag-handle
+                                    className={`flex items-center justify-center transition-opacity ${presetConfigOnly ? 'cursor-not-allowed text-gray-300 opacity-40 dark:text-gray-600' : 'cursor-grab active:cursor-grabbing text-gray-400 opacity-60 hover:opacity-100 dark:text-gray-500'}`}
+                                    style={{ touchAction: presetConfigOnly ? 'auto' : 'none' }}
+                                    title={presetConfigOnly ? presetOnlyLockTooltip : '拖拽排序'}
+                                    aria-disabled={presetConfigOnly}
+                                  >
+                                    <DragHandleIcon className="h-3.5 w-3.5" />
+                                  </div>
                                   <span className="min-w-0 truncate">{profile.name}</span>
                                   <span className={`rounded px-1.5 py-0.5 text-[10px] shrink-0 ${profile.id === activeProfile.id ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300' : 'bg-gray-100 text-gray-500 dark:bg-white/[0.08] dark:text-gray-400'}`}>
                                     {getApiProviderLabel(draft, profile.provider)}
@@ -1378,22 +1426,25 @@ export default function SettingsModal() {
                                     onClick={(e) => {
                                       e.preventDefault()
                                       e.stopPropagation()
+                                      if (presetConfigOnly) return
                                       confirmCopyProfileImportUrl(profile)
                                     }}
-                                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-400 opacity-60 transition-all hover:bg-gray-100 hover:text-gray-600 hover:opacity-100 dark:hover:bg-white/[0.08] dark:hover:text-gray-200"
+                                    disabled={presetConfigOnly}
+                                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-400 opacity-60 transition-all hover:bg-gray-100 hover:text-gray-600 hover:opacity-100 dark:hover:bg-white/[0.08] dark:hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400"
                                     aria-label={`复制导入配置「${profile.name}」的 URL`}
-                                    title="复制导入 URL"
+                                    title={presetConfigOnly ? presetOnlyLockTooltip : '复制导入 URL'}
                                   >
                                     <LinkIcon className="h-3.5 w-3.5" />
                                   </button>
-                                  {!presetConfigOnly && (isDefaultProfile || draft.profiles.length > 1) && (
+                                  {(isDefaultProfile || draft.profiles.length > 1) && (
                                     <TooltipButton
-                                      tooltip={isPresetProfile && presetDeletionPrevented ? '预置配置不可删除' : '删除配置'}
-                                      disabled={isPresetProfile && presetDeletionPrevented}
-                                      showOnClick={isPresetProfile && presetDeletionPrevented}
+                                      tooltip={presetConfigOnly ? presetOnlyLockTooltip : isPresetProfile && presetDeletionPrevented ? '预置配置不可删除' : '删除配置'}
+                                      disabled={presetConfigOnly || (isPresetProfile && presetDeletionPrevented)}
+                                      showOnClick={presetConfigOnly || (isPresetProfile && presetDeletionPrevented)}
                                       stopPropagation
                                       onClick={(e) => {
                                         e.preventDefault()
+                                        if (presetConfigOnly || (isPresetProfile && presetDeletionPrevented)) return
                                         setConfirmDialog({
                                           title: '删除配置',
                                           message: `确定要删除配置「${profile.name}」吗？`,
@@ -1401,7 +1452,7 @@ export default function SettingsModal() {
                                         })
                                       }}
                                       wrapperClassName="relative flex h-5 w-5 shrink-0"
-                                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded opacity-60 transition-all ${isPresetProfile && presetDeletionPrevented ? 'cursor-not-allowed text-gray-300 dark:text-gray-600' : 'text-gray-400 hover:bg-red-50 hover:text-red-500 hover:opacity-100 dark:hover:bg-red-500/10'}`}
+                                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded opacity-60 transition-all ${presetConfigOnly || (isPresetProfile && presetDeletionPrevented) ? 'cursor-not-allowed text-gray-300 dark:text-gray-600' : 'text-gray-400 hover:bg-red-50 hover:text-red-500 hover:opacity-100 dark:hover:bg-red-500/10'}`}
                                     >
                                       <TrashIcon className="h-3.5 w-3.5" />
                                     </TooltipButton>
@@ -1433,7 +1484,7 @@ export default function SettingsModal() {
                   onChange={(e) => updateActiveProfile({ name: e.target.value })}
                   onBlur={(e) => commitActiveProfilePatch({ name: e.target.value })}
                   type="text"
-                  disabled={activeProfileLocked}
+                  disabled={presetIdentityLocked || activeProfileLocked}
                   className="w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
                 />
               </label>
@@ -1446,7 +1497,7 @@ export default function SettingsModal() {
                   onChange={handleProviderTypeChange}
                   onReorder={handleProviderReorder}
                   options={providerOptions}
-                  disabled={presetConfigOnly || activeProfileLocked}
+                  disabled={activeProfileLocked}
                   className="w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
                 />
               </div>
@@ -1462,7 +1513,7 @@ export default function SettingsModal() {
                     onChange={(e) => updateActiveProfile({ baseUrl: e.target.value })}
                     onBlur={(e) => commitActiveProfilePatch({ baseUrl: e.target.value })}
                     type="text"
-                    disabled={apiProxyEnabled || activeProfileLocked}
+                    disabled={apiProxyEnabled || presetIdentityLocked || activeProfileLocked}
                     placeholder={activeProfile.provider === 'fal' ? DEFAULT_FAL_BASE_URL : DEFAULT_SETTINGS.baseUrl}
                     className={`w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50 ${apiProxyEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                   />
@@ -1812,11 +1863,13 @@ export default function SettingsModal() {
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400">支持一次导入多个普通备份；分片备份请一次性选中同一批次的全部分片</p>
                   <div className="flex flex-wrap gap-x-6 gap-y-3">
-                    {!presetConfigOnly && <Checkbox
-                      checked={importConfig}
-                      onChange={setImportConfig}
+                    <Checkbox
+                      disabled={presetConfigOnly}
+                      checked={presetConfigOnly ? false : importConfig}
+                      onChange={presetConfigOnly ? () => {} : setImportConfig}
                       label="包含配置"
-                    />}
+                      title={presetConfigOnly ? presetOnlyLockTooltip : undefined}
+                    />
                     <Checkbox
                       checked={importTasks}
                       onChange={setImportTasks}

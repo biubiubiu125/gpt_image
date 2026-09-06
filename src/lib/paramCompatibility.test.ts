@@ -39,6 +39,17 @@ describe('parameter compatibility', () => {
     expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 4 }, settings).n).toBe(4)
   })
 
+  it('keeps non-16-multiple custom sizes for regular OpenAI-compatible requests', () => {
+    const openAIProfile = createDefaultOpenAIProfile({ apiKey: 'test-key' })
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [openAIProfile],
+      activeProfileId: openAIProfile.id,
+    })
+
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: '1033x1522' }, settings).size).toBe('1033x1522')
+  })
+
   it('only replaces fal.ai auto size in text-to-image mode', () => {
     const falProfile = createDefaultFalProfile({ apiKey: 'fal-key' })
     const settings = normalizeSettings({
