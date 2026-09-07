@@ -71,13 +71,38 @@ test('smoke image script uses buildx with --load so the local image can be run',
   assert.match(smoke, /run\(\s*'docker',\s*\[\s*'buildx',\s*'build',\s*'--platform',\s*'linux\/amd64',\s*'--load',\s*'--progress=plain'/s)
 })
 
-test('smoke image script exercises the real nginx entrypoint and rewrite checks', async () => {
+test('smoke image script exercises the real nginx entrypoint and proxy checks', async () => {
   const { readFile } = await import('node:fs/promises')
   const smokePath = new URL('./smoke-docker-image.mjs', import.meta.url)
   const smoke = await readFile(smokePath, 'utf8')
 
   assert.ok(smoke.includes('/docker-entrypoint.sh nginx -g "daemon off;"'))
-  assert.ok(smoke.includes('attempts=30'))
-  assert.ok(smoke.includes("rewrite ^/api-proxy/(.*)$ /$1 break;"))
-  assert.ok(smoke.includes("proxy_pass https://api.veridiantech1.com/v1$uri$is_args$args;"))
+  assert.ok(smoke.includes('attempts=40'))
+  assert.ok(smoke.includes("proxy_pass https://mock-api:8443/v1$uri$is_args$args;"))
+  assert.ok(smoke.includes('wget -qO-'))
+})
+
+test('smoke image script sends real requests through a hostname-based mock upstream', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const smokePath = new URL('./smoke-docker-image.mjs', import.meta.url)
+  const smoke = await readFile(smokePath, 'utf8')
+
+  assert.ok(smoke.includes("['network', 'create', networkName]"))
+  assert.ok(smoke.includes('node:22-alpine'))
+  assert.ok(smoke.includes("'--network-alias'"))
+  assert.ok(smoke.includes('API_PROXY_URL=https://mock-api:8443/v1'))
+  assert.ok(smoke.includes('openssl'))
+  assert.ok(smoke.includes("['cp',"))
+  assert.ok(smoke.includes('update-ca-certificates'))
+  assert.ok(smoke.includes('wget -qO-'))
+  assert.ok(smoke.includes('/api-proxy/responses?smoke=responses'))
+  assert.ok(smoke.includes('/api-proxy/images/generations?smoke=images'))
+  assert.ok(smoke.includes('/api-proxy/images/edits?smoke=edit'))
+  assert.ok(smoke.includes('/api-proxy/responses?smoke=stream'))
+  assert.ok(smoke.includes('/tmp/stream.out'))
+  assert.ok(smoke.includes('multipart/form-data; boundary=----gptimageboundary'))
+  assert.ok(smoke.includes('Authorization: Bearer smoke-token'))
+  assert.ok(smoke.includes('RK API'))
+  assert.ok(smoke.includes('__VITE_DEFAULT_API_URL_PLACEHOLDER__'))
+  assert.ok(smoke.includes('SIGTERM'))
 })

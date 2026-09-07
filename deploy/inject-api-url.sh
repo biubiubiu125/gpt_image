@@ -1,95 +1,10 @@
 #!/bin/sh
 set -eu
 
+. /usr/local/bin/gpt-image-runtime-env.sh
+runtime_prepare_api_environment
+
 # 用环境变量替换前端默认 API URL。显式传入空字符串时保留为空。
-if [ "${DEFAULT_API_URL+x}" != "x" ]; then
-    DEFAULT_API_URL=${API_URL:-https://api.veridiantech1.com/v1}
-fi
-DOCKER_LEGACY_API_URL_USED=${DOCKER_LEGACY_API_URL_USED:-false}
-if [ -n "${API_URL:-}" ]; then
-    DOCKER_LEGACY_API_URL_USED=true
-fi
-
-normalize_legacy_api_proxy_url() {
-    case "$1" in
-        http://*|https://*)
-            # 复现旧版客户端的 URL 规则：无尾斜杠时保留已有路径并补 /v1，
-            # 已存在 /v1 段时截断到该段；尾斜杠表示直接拼接，不补版本路径。
-            # 查询参数和片段只用于前端预置配置，不应成为代理上游的路径。
-            legacy_url=${1%%\?*}
-            legacy_url=${legacy_url%%\#*}
-            legacy_scheme=${legacy_url%%://*}
-            legacy_authority_and_path=${legacy_url#*://}
-            legacy_authority=${legacy_authority_and_path%%/*}
-            legacy_path=${legacy_authority_and_path#"$legacy_authority"}
-            legacy_origin="${legacy_scheme}://${legacy_authority}"
-            legacy_remaining=${legacy_path#/}
-            legacy_normalized_path=
-            legacy_has_v1=false
-
-            while [ -n "$legacy_remaining" ]; do
-                case "$legacy_remaining" in
-                    */*)
-                        legacy_segment=${legacy_remaining%%/*}
-                        legacy_remaining=${legacy_remaining#*/}
-                        ;;
-                    *)
-                        legacy_segment=$legacy_remaining
-                        legacy_remaining=
-                        ;;
-                esac
-                [ -n "$legacy_segment" ] || continue
-                if [ -n "$legacy_normalized_path" ]; then
-                    legacy_normalized_path="$legacy_normalized_path/$legacy_segment"
-                else
-                    legacy_normalized_path="/$legacy_segment"
-                fi
-                if [ "$legacy_segment" = "v1" ]; then
-                    legacy_has_v1=true
-                    break
-                fi
-            done
-
-            if [ "$legacy_has_v1" = "true" ]; then
-                printf '%s%s' "$legacy_origin" "$legacy_normalized_path"
-            else
-                case "$legacy_url" in
-                    */)
-                        printf '%s' "$legacy_url"
-                        ;;
-                    *)
-                        printf '%s%s/v1' "$legacy_origin" "$legacy_path"
-                        ;;
-                esac
-            fi
-            ;;
-        *)
-            printf '%s' "$1"
-            ;;
-    esac
-}
-
-if [ -z "${API_PROXY_URL:-}" ]; then
-    API_PROXY_URL=${API_URL:-https://api.veridiantech1.com/v1}
-    if [ -n "${API_URL:-}" ]; then
-        API_PROXY_URL=$(normalize_legacy_api_proxy_url "$API_PROXY_URL")
-    fi
-fi
-
-normalize_api_proxy_url() {
-    case "$1" in
-        http://*|https://*)
-            printf '%s' "$1" | sed 's#/*$##'
-            ;;
-        *)
-            printf '%s' "$1"
-            ;;
-    esac
-}
-
-API_PROXY_URL=$(normalize_api_proxy_url "$API_PROXY_URL")
-export API_PROXY_URL
-
 API_PROXY_AVAILABLE=false
 if [ "${ENABLE_API_PROXY:-false}" = "true" ]; then
     API_PROXY_AVAILABLE=true
@@ -177,5 +92,3 @@ if [ "${ENABLE_API_PROXY:-false}" != "true" ]; then
     # 删除代理配置块
     sed -i '/# BEGIN API PROXY/,/# END API PROXY/d' /etc/nginx/conf.d/default.conf
 fi
-
-exec "$@"

@@ -258,13 +258,16 @@ npm run deploy:cf
 |------|------|
 | `DEFAULT_API_URL` | 预置配置，支持上述三种填写方式。若值指向 `.json` 文件或容器内路径，容器启动时自动读取并内嵌到页面。宿主机文件需通过 volume 挂载。详见 [预置配置说明](#preset-config) |
 | `ENABLE_API_PROXY=true` | 开启 Nginx 同源代理，请求发往 `/api-proxy/{路径}` 再转发到 `API_PROXY_URL` |
-| `API_PROXY_URL` | 代理转发的完整 API 基础地址（不自动补 `/v1`） |
+| `API_PROXY_URL` | 代理转发的完整 API 基础地址（不自动补 `/v1`）。仅支持 `http://` 或 `https://`，不能包含查询参数、片段或首尾空格 |
+| `NGINX_RESOLVER` | 可选的 Nginx DNS 服务器列表，多个地址用空格分隔；未设置时自动读取容器 `/etc/resolv.conf`，适配 Docker 自定义网络、默认 bridge 和 host 网络 |
 | `LOCK_API_PROXY=true` | 强制锁定代理为开启，用户无法关闭 |
 | `HOST` / `PORT` | Nginx 监听地址和端口，默认 `0.0.0.0:80` |
 
 > 开启 API 代理后，任何人都能将你的服务器作为代理来请求目标 API。建议仅在有访问控制（如 IP 白名单）或本地网络中开启。
 
 > 旧版 `API_URL` 已拆分为 `DEFAULT_API_URL` 和 `API_PROXY_URL`，容器启动时自动兼容，无需立即修改。仅配置 `API_URL` 时，它会作为两个新变量的兜底值；显式设置 `DEFAULT_API_URL=` 仍会保留为空，用于配合代理隐藏地址。
+
+> API 代理会在容器启动时自动配置 Nginx DNS 解析器。若宿主机或 Docker 的 DNS 配置特殊，可显式设置 `NGINX_RESOLVER`，例如 `1.1.1.1 8.8.8.8`。
 
 **隐藏真实 API 地址**
 

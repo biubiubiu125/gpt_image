@@ -19,6 +19,7 @@ const runtimeEnvironmentKeys = [
   'PREVENT_API_CONFIG_DELETION',
   'PREVENT_PRESET_CONFIG_DELETION',
   'DOCKER_LEGACY_API_URL_USED',
+  'NGINX_RESOLVER',
 ]
 
 function normalizeShellScript(source) {
@@ -49,6 +50,7 @@ function cleanEnvironment(overrides = {}) {
     'PREVENT_API_CONFIG_DELETION',
     'PREVENT_PRESET_CONFIG_DELETION',
     'DOCKER_LEGACY_API_URL_USED',
+    'NGINX_RESOLVER',
   ]) {
     delete env[key]
   }
@@ -92,8 +94,10 @@ function verifyDockerfileEntrypointContract(dockerfile) {
   assert.match(normalized, /^RUN npm ci$/m)
   assert.match(normalized, /^RUN npm run build$/m)
   assert.match(normalized, /^FROM nginx:alpine$/m)
+  assert.match(normalized, /^RUN apk add --no-cache ca-certificates$/m)
   assert.match(normalized, /^COPY --from=build \/app\/dist \/usr\/share\/nginx\/html$/m)
   assert.match(normalized, /^COPY deploy\/nginx\.conf \/etc\/nginx\/templates\/default\.conf\.template$/m)
+  assert.match(normalized, /^COPY --chmod=755 deploy\/runtime-env\.sh \/usr\/local\/bin\/gpt-image-runtime-env\.sh$/m)
   assert.match(normalized, /^CMD \["nginx", "-g", "daemon off;"\]$/m)
   assert.doesNotMatch(normalized, /^ENV (DEFAULT_API_URL|API_PROXY_URL)=/m)
 
@@ -108,24 +112,69 @@ function verifyDockerfileEntrypointContract(dockerfile) {
   assert.ok(migrationCopy < injectionCopy, 'Environment migration must run before runtime asset injection')
 }
 
+function prepareMigrationFixture(scriptPath) {
+  const shellRuntimeEnvPath = process.platform === 'win32'
+    ? toWslPath(join(projectRoot, 'deploy', 'runtime-env.sh'))
+    : join(projectRoot, 'deploy', 'runtime-env.sh')
+  const fixtureScript = normalizeShellScript(readFileSync(scriptPath, 'utf8'))
+    .replaceAll('/usr/local/bin/gpt-image-runtime-env.sh', shellRuntimeEnvPath)
+  const patchedScriptPath = join(tempRoot, `migration-${Math.random().toString(36).slice(2)}.sh`)
+  writeExecutable(patchedScriptPath, fixtureScript)
+  return patchedScriptPath
+}
+
 function runMigration(scriptPath, overrides) {
+  const patchedScriptPath = prepareMigrationFixture(scriptPath)
   const result = runShell(
     [
       '-c',
-      'set -eu; . "$1"; printf "%s\n" "$DEFAULT_API_URL" "$API_PROXY_URL" "$DOCKER_LEGACY_API_URL_USED"',
+      'set -eu; . "$1"; printf "%s\n" "$DEFAULT_API_URL" "$API_PROXY_URL" "$DOCKER_LEGACY_API_URL_USED" "${NGINX_RESOLVER:-}"',
       'gpt-image-runtime-migration',
-      scriptPath,
+      patchedScriptPath,
     ],
     cleanEnvironment(overrides),
   )
   assertCommandSucceeded(result, 'Docker environment migration')
   const lines = result.stdout.replace(/\n$/, '').split('\n')
-  assert.equal(lines.length, 3, `Unexpected migration output: ${result.stdout}`)
+  assert.equal(lines.length, 4, `Unexpected migration output: ${result.stdout}`)
   return {
     defaultApiUrl: lines[0],
     apiProxyUrl: lines[1],
     legacyApiUrlUsed: lines[2],
+    nginxResolver: lines[3],
   }
+}
+
+function runMigrationFailure(scriptPath, overrides) {
+  const patchedScriptPath = prepareMigrationFixture(scriptPath)
+  const result = runShell(
+    [
+      '-c',
+      '. "$1"',
+      'gpt-image-runtime-migration',
+      patchedScriptPath,
+    ],
+    cleanEnvironment(overrides),
+  )
+  assert.notEqual(
+    result.status,
+    0,
+    `Invalid Docker environment should fail, stdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+  )
+}
+
+function assertMigration(scriptPath, overrides, expected, message) {
+  const actual = runMigration(scriptPath, overrides)
+  assert.deepEqual(
+    {
+      defaultApiUrl: actual.defaultApiUrl,
+      apiProxyUrl: actual.apiProxyUrl,
+      legacyApiUrlUsed: actual.legacyApiUrlUsed,
+    },
+    expected,
+    message,
+  )
+  return actual
 }
 
 function resetRuntimeFixture(htmlDir, nginxConfigPath) {
@@ -163,9 +212,13 @@ function resetRuntimeFixture(htmlDir, nginxConfigPath) {
 function runInjector(scriptPath, htmlDir, nginxConfigPath, overrides, commandArgs = []) {
   const shellHtmlDir = process.platform === 'win32' ? toWslPath(htmlDir) : htmlDir
   const shellNginxConfigPath = process.platform === 'win32' ? toWslPath(nginxConfigPath) : nginxConfigPath
+  const shellRuntimeEnvPath = process.platform === 'win32'
+    ? toWslPath(join(projectRoot, 'deploy', 'runtime-env.sh'))
+    : join(projectRoot, 'deploy', 'runtime-env.sh')
   const fixtureScript = normalizeShellScript(readFileSync(scriptPath, 'utf8'))
     .replaceAll('/usr/share/nginx/html', shellHtmlDir)
     .replaceAll('/etc/nginx/conf.d/default.conf', shellNginxConfigPath)
+    .replaceAll('/usr/local/bin/gpt-image-runtime-env.sh', shellRuntimeEnvPath)
   const patchedScriptPath = join(tempRoot, `inject-api-url-${Math.random().toString(36).slice(2)}.sh`)
   writeExecutable(patchedScriptPath, fixtureScript)
 
@@ -184,8 +237,9 @@ try {
   verifyDockerfileEntrypointContract(dockerfile)
   assert.match(injector, /^set -eu$/m, 'Runtime asset injection must fail fast on unset variables or command errors')
 
-  assert.deepEqual(
-    runMigration(migrationPath, {}),
+  const defaultMigration = assertMigration(
+    migrationPath,
+    {},
     {
       defaultApiUrl: 'https://api.veridiantech1.com/v1',
       apiProxyUrl: 'https://api.veridiantech1.com/v1',
@@ -193,8 +247,10 @@ try {
     },
     'Unset Docker variables should use the raw RK API default and the /v1 proxy target',
   )
-  assert.deepEqual(
-    runMigration(migrationPath, { API_URL: 'https://legacy.example.com/v1/' }),
+  assert.match(defaultMigration.nginxResolver, /\S+/, 'Docker runtime must discover at least one DNS resolver')
+  assertMigration(
+    migrationPath,
+    { API_URL: 'https://legacy.example.com/v1/' },
     {
       defaultApiUrl: 'https://legacy.example.com/v1/',
       apiProxyUrl: 'https://legacy.example.com/v1',
@@ -202,8 +258,9 @@ try {
     },
     'The legacy API_URL must migrate when the new variables are absent',
   )
-  assert.deepEqual(
-    runMigration(migrationPath, { API_URL: 'https://legacy.example.com' }),
+  assertMigration(
+    migrationPath,
+    { API_URL: 'https://legacy.example.com' },
     {
       defaultApiUrl: 'https://legacy.example.com',
       apiProxyUrl: 'https://legacy.example.com/v1',
@@ -211,8 +268,9 @@ try {
     },
     'A host-only legacy API_URL must preserve the old /v1 request behavior for the Nginx proxy',
   )
-  assert.deepEqual(
-    runMigration(migrationPath, { API_URL: 'https://legacy.example.com/custom' }),
+  assertMigration(
+    migrationPath,
+    { API_URL: 'https://legacy.example.com/custom' },
     {
       defaultApiUrl: 'https://legacy.example.com/custom',
       apiProxyUrl: 'https://legacy.example.com/custom/v1',
@@ -220,8 +278,9 @@ try {
     },
     'A legacy API_URL with a non-version path must preserve the old path plus /v1 behavior for the Nginx proxy',
   )
-  assert.deepEqual(
-    runMigration(migrationPath, { API_URL: 'https://legacy.example.com/custom/' }),
+  assertMigration(
+    migrationPath,
+    { API_URL: 'https://legacy.example.com/custom/' },
     {
       defaultApiUrl: 'https://legacy.example.com/custom/',
       apiProxyUrl: 'https://legacy.example.com/custom',
@@ -229,11 +288,12 @@ try {
     },
     'A trailing slash in a legacy API_URL must preserve direct-path semantics for the Nginx proxy',
   )
-  assert.deepEqual(
-    runMigration(migrationPath, {
+  assertMigration(
+    migrationPath,
+    {
       API_URL: 'https://legacy.example.com/v1/',
       DEFAULT_API_URL: '',
-    }),
+    },
     {
       defaultApiUrl: '',
       apiProxyUrl: 'https://legacy.example.com/v1',
@@ -241,11 +301,12 @@ try {
     },
     'An explicitly empty DEFAULT_API_URL must remain empty',
   )
-  assert.deepEqual(
-    runMigration(migrationPath, {
+  assertMigration(
+    migrationPath,
+    {
       API_URL: 'https://legacy.example.com/v1/',
       DEFAULT_API_URL: 'https://api.veridiantech1.com/v1',
-    }),
+    },
     {
       defaultApiUrl: 'https://api.veridiantech1.com/v1',
       apiProxyUrl: 'https://legacy.example.com/v1',
@@ -260,6 +321,72 @@ try {
     'https://proxy.example.com/v1',
     'The proxy target must have one canonical trailing slash boundary',
   )
+  assert.equal(
+    runMigration(migrationPath, {
+      API_PROXY_URL: 'https://proxy.example.com/v1',
+      NGINX_RESOLVER: '1.1.1.1 8.8.8.8',
+    }).nginxResolver,
+    '1.1.1.1 8.8.8.8',
+    'An explicit resolver override must be preserved',
+  )
+  assert.equal(
+    runMigration(migrationPath, {
+      API_PROXY_URL: 'https://proxy.example.com/v1',
+      NGINX_RESOLVER: '[::1]',
+    }).nginxResolver,
+    '[::1]',
+    'A bracketed IPv6 resolver must be accepted',
+  )
+  assert.equal(
+    runMigration(migrationPath, {
+      API_PROXY_URL: 'https://proxy.example.com/v1',
+      NGINX_RESOLVER: '2001:4860:4860::8888',
+    }).nginxResolver,
+    '[2001:4860:4860::8888]',
+    'An unbracketed IPv6 resolver must be normalized for Nginx syntax',
+  )
+  assert.equal(
+    runMigration(migrationPath, {
+      API_PROXY_URL: 'https://proxy.example.com:8443/v1',
+    }).apiProxyUrl,
+    'https://proxy.example.com:8443/v1',
+    'A numeric non-standard HTTPS port must be preserved',
+  )
+  assert.equal(
+    runMigration(migrationPath, {
+      API_PROXY_URL: 'https://[::1]:8443/v1',
+    }).apiProxyUrl,
+    'https://[::1]:8443/v1',
+    'A bracketed IPv6 proxy target with a numeric port must be accepted',
+  )
+  for (const invalidProxyUrl of [
+    'https://proxy.example.com/v1?fixed=1',
+    'https://proxy.example.com/v1#fragment',
+    ' https://proxy.example.com/v1 ',
+    'https://:443/v1',
+    'https://proxy.example.com:bad/v1',
+    'https://proxy.example.com:0/v1',
+    'https://proxy.example.com:65536/v1',
+    'https://[::1/v1',
+    'https://[1.1.1.1]/v1',
+    'https://2001:db8::1/v1',
+  ]) {
+    runMigrationFailure(migrationPath, { API_PROXY_URL: invalidProxyUrl })
+  }
+  for (const invalidResolver of [
+    'resolver.example.com',
+    '1.1.1.1;return 200',
+    '999.1.1.1',
+    '1.2.3.4.5',
+    '[gg::1]',
+    '[::1',
+    '[1.1.1.1]',
+  ]) {
+    runMigrationFailure(migrationPath, {
+      API_PROXY_URL: 'https://proxy.example.com/v1',
+      NGINX_RESOLVER: invalidResolver,
+    })
+  }
 
   const htmlDir = join(tempRoot, 'html')
   const nginxConfigPath = join(tempRoot, 'default.conf')
@@ -315,6 +442,32 @@ try {
   assert.equal(readFileSync(nginxConfigPath, 'utf8').includes('# BEGIN API PROXY'), true)
 
   const renderedNginx = nginxTemplate.replaceAll('${API_PROXY_URL}', 'https://proxy.example.com/v1')
+  const renderedNginxWithPort = nginxTemplate.replaceAll('${API_PROXY_URL}', 'https://proxy.example.com:8443/v1')
+  assert.match(
+    renderedNginx,
+    /location \/api-proxy\/ \{[\s\S]*?resolver \$\{NGINX_RESOLVER\} ipv6=off valid=30s;[\s\S]*?resolver_timeout 5s;/,
+    'The API proxy must use a runtime-configured resolver when proxy_pass contains URI variables',
+  )
+  assert.match(
+    renderedNginxWithPort,
+    /proxy_pass https:\/\/proxy\.example\.com:8443\/v1\$uri\$is_args\$args;/,
+    'The API proxy must preserve a non-standard HTTPS port in the upstream target',
+  )
+  assert.match(
+    renderedNginx,
+    /proxy_ssl_verify on;[\s\S]*?proxy_ssl_trusted_certificate \/etc\/ssl\/certs\/ca-certificates\.crt;/,
+    'The API proxy must verify HTTPS upstream certificates',
+  )
+  assert.match(
+    renderedNginx,
+    /proxy_set_header Authorization \$http_authorization;/,
+    'The API proxy must forward the browser Authorization header',
+  )
+  assert.match(
+    renderedNginx,
+    /proxy_set_header Connection "";[\s\S]*?proxy_set_header X-Real-IP/,
+    'The API proxy must keep upstream streaming connections reusable',
+  )
   assert.match(renderedNginx, /rewrite \^\/api-proxy\/\(\.\*\)\$ \/\$1 break;/)
   assert.match(renderedNginx, /proxy_pass https:\/\/proxy\.example\.com\/v1\$uri\$is_args\$args;/)
   assert.doesNotMatch(renderedNginx, /proxy_pass https:\/\/proxy\.example\.com\/v1;$/m)

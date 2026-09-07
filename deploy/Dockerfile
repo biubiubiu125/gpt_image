@@ -21,6 +21,8 @@ RUN npm run build
 # ---- Production stage ----
 FROM nginx:alpine
 
+RUN apk add --no-cache ca-certificates
+
 ENV HOST=0.0.0.0
 ENV PORT=80
 ENV ENABLE_API_PROXY=false
@@ -31,6 +33,7 @@ ENV PREVENT_PRESET_CONFIG_DELETION=false
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY deploy/nginx.conf /etc/nginx/templates/default.conf.template
+COPY --chmod=755 deploy/runtime-env.sh /usr/local/bin/gpt-image-runtime-env.sh
 COPY --chmod=755 deploy/migrate-api-env.envsh /docker-entrypoint.d/05-migrate-api-env.envsh
 COPY --chmod=755 deploy/inject-api-url.sh /docker-entrypoint.d/40-inject-api-url.sh
 
