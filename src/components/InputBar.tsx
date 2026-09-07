@@ -1792,9 +1792,6 @@ export default function InputBar() {
                     }`}
                     aria-label={uploadImageTooltipText}
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                    </svg>
                     <span className="whitespace-nowrap font-medium">上传参考图</span>
                   </button>
                 </div>
@@ -1820,11 +1817,7 @@ export default function InputBar() {
                       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                         <rect x="7" y="7" width="10" height="10" rx="1.5" />
                       </svg>
-                    ) : (
-                      <span className="inline-flex h-5 items-center rounded-md border border-white/30 px-1.5 text-[11px] font-semibold leading-none text-white/95 shadow-sm">
-                        Enter
-                      </span>
-                    )}
+                    ) : null}
                     {activeAgentIsRunning ? (
                       <span>停止生成</span>
                     ) : (
@@ -1856,21 +1849,14 @@ export default function InputBar() {
                         setShowMobileUploadMenu(!showMobileUploadMenu)
                       }
                     }}
-                    className={`p-2.5 rounded-xl transition-all shadow-sm flex-shrink-0 ${
+                    className={`inline-flex items-center rounded-xl px-3 py-2.5 text-sm transition-all shadow-sm flex-shrink-0 ${
                       atImageLimit
                         ? 'bg-gray-200 dark:bg-white/[0.04] text-gray-300 dark:text-gray-500 cursor-not-allowed'
                         : 'bg-gray-200 dark:bg-white/[0.06] hover:bg-gray-300 dark:hover:bg-white/[0.1] text-gray-500 dark:text-gray-300'
                     }`}
                     aria-label={uploadImageTooltipText}
                   >
-                    <svg
-                      className={`w-5 h-5 transition-transform duration-200 ${showMobileUploadMenu ? 'rotate-90' : ''}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
+                    <span className="whitespace-nowrap font-medium">上传参考图</span>
                   </button>
 
                   {/* Mobile Upload Menu */}
@@ -1901,9 +1887,6 @@ export default function InputBar() {
                             fileInputRef.current?.click()
                           }}
                         >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                          </svg>
                           上传参考图
                         </button>
                       </div>
@@ -1932,11 +1915,7 @@ export default function InputBar() {
                       <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                         <rect x="7" y="7" width="10" height="10" rx="1.5" />
                       </svg>
-                    ) : (
-                      <span className="inline-flex h-4 items-center rounded-md border border-white/30 px-1.5 text-[10px] font-semibold leading-none text-white/95 shadow-sm">
-                        Enter
-                      </span>
-                    )}
+                    ) : null}
                     {activeAgentIsRunning ? '停止生成' : maskDraft ? '遮罩编辑' : '生成图像'}
                   </button>
                 </div>

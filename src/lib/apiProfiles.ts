@@ -148,8 +148,8 @@ const SUB2API_PROVIDER: CustomProviderDefinition = {
 
 type ApiProfileProviderDraft = NonNullable<ApiProfile['providerDrafts']>[ApiProvider]
 
-function getDefaultStreamImages(provider: ApiProvider, apiMode: ApiMode): boolean {
-  return provider === 'openai' && apiMode === 'responses'
+function getDefaultStreamImages(provider: ApiProvider): boolean {
+  return provider === 'openai'
 }
 
 export function getDefaultOpenAIModel(apiMode: ApiMode): string {
@@ -437,7 +437,7 @@ export function normalizeCustomProviderDefinitions(input: unknown): CustomProvid
 
 export function createDefaultOpenAIProfile(overrides: Partial<ApiProfile> = {}): ApiProfile {
   const apiMode = overrides.apiMode ?? DEFAULT_API_URL_PATCH?.apiMode ?? 'images'
-  const streamImages = overrides.streamImages ?? DEFAULT_API_URL_PATCH?.streamImages ?? getDefaultStreamImages('openai', apiMode)
+  const streamImages = overrides.streamImages ?? DEFAULT_API_URL_PATCH?.streamImages ?? getDefaultStreamImages('openai')
 
   return {
     id: DEFAULT_OPENAI_PROFILE_ID,
@@ -536,7 +536,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
   const nextApiMode = savedDraft?.apiMode ?? profile.apiMode
   const nextStreamImages = savedDraft?.streamImages ?? (profile.provider === 'openai'
     ? profile.streamImages
-    : getDefaultStreamImages(provider, nextApiMode))
+    : getDefaultStreamImages(provider))
   const nextStreamPartialImages = savedDraft?.streamPartialImages ?? (profile.provider === 'openai'
     ? profile.streamPartialImages
     : DEFAULT_STREAM_PARTIAL_IMAGES)
@@ -1015,7 +1015,7 @@ function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
     profile.reasoningEffort === undefined &&
     profile.codexCli === false &&
     profile.apiProxy === DEFAULT_OPENAI_API_PROXY &&
-    profile.streamImages === getDefaultStreamImages('openai', profile.apiMode) &&
+    profile.streamImages === getDefaultStreamImages('openai') &&
     profile.streamPartialImages === DEFAULT_STREAM_PARTIAL_IMAGES &&
     profile.transparentBackgroundMethod === 'api' &&
     !profile.description?.trim() &&
@@ -1368,7 +1368,7 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   apiMode: DEFAULT_API_URL_PATCH?.apiMode ?? 'images',
   codexCli: DEFAULT_API_URL_PATCH?.codexCli ?? false,
   apiProxy: DEFAULT_OPENAI_API_PROXY,
-  streamImages: DEFAULT_API_URL_PATCH?.streamImages ?? getDefaultStreamImages('openai', DEFAULT_API_URL_PATCH?.apiMode ?? 'images'),
+  streamImages: DEFAULT_API_URL_PATCH?.streamImages ?? getDefaultStreamImages('openai'),
   streamPartialImages: DEFAULT_API_URL_PATCH?.streamPartialImages ?? DEFAULT_STREAM_PARTIAL_IMAGES,
   customProviders: [],
   clearInputAfterSubmit: false,

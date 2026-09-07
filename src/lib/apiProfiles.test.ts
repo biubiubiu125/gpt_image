@@ -1932,13 +1932,13 @@ describe('custom providers', () => {
     expect(openAIProfile.transparentBackgroundMethod).toBe('api')
   })
 
-  it('uses API-mode specific streaming defaults and preserves partial image count', () => {
-    expect(createDefaultOpenAIProfile().streamImages).toBe(false)
+  it('uses openai streaming by default and preserves partial image count', () => {
+    expect(createDefaultOpenAIProfile().streamImages).toBe(true)
     expect(createDefaultOpenAIProfile({ apiMode: 'responses' }).streamImages).toBe(true)
     expect(createDefaultOpenAIProfile().streamPartialImages).toBe(1)
-    expect(DEFAULT_SETTINGS.streamImages).toBe(false)
+    expect(DEFAULT_SETTINGS.streamImages).toBe(true)
     expect(DEFAULT_SETTINGS.streamPartialImages).toBe(1)
-    expect(DEFAULT_SETTINGS.profiles[0].streamImages).toBe(false)
+    expect(DEFAULT_SETTINGS.profiles[0].streamImages).toBe(true)
     expect(DEFAULT_SETTINGS.profiles[0].streamPartialImages).toBe(1)
     expect(normalizeSettings({ apiMode: 'responses' }).streamImages).toBe(true)
 

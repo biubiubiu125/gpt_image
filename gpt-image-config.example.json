@@ -8,6 +8,7 @@
       "baseUrl": "https://api.veridiantech1.com/v1",
       "model": "gpt-image-2",
       "apiMode": "images",
+      "streamImages": true,
       "isDefault": true
     }
   ]

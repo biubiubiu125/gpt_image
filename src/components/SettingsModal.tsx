@@ -1332,12 +1332,12 @@ export default function SettingsModal() {
                       ref={profileMenuTriggerRef}
                       type="button"
                       onClick={() => {
-                        if (profileMenuDisabled) return
+                        if (profileMenuDisabled || presetConfigOnly) return
                         if (!showProfileMenu) updateProfileMenuMaxHeight()
                         setShowProfileMenu(!showProfileMenu)
                       }}
-                      disabled={profileMenuDisabled}
-                      className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 ${profileMenuDisabled ? 'cursor-not-allowed opacity-70' : 'hover:bg-gray-50 dark:hover:bg-white/[0.06]'}`}
+                      disabled={profileMenuDisabled || presetConfigOnly}
+                      className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 ${(profileMenuDisabled || presetConfigOnly) ? 'cursor-not-allowed opacity-70' : 'hover:bg-gray-50 dark:hover:bg-white/[0.06]'}`}
                       title={activeProfileLockTooltip || activeProfile.name}
                     >
                       <span className="flex min-w-0 items-center gap-2">
@@ -1497,7 +1497,7 @@ export default function SettingsModal() {
                   onChange={handleProviderTypeChange}
                   onReorder={handleProviderReorder}
                   options={providerOptions}
-                  disabled={activeProfileLocked}
+                  disabled={presetConfigOnly || activeProfileLocked}
                   className="w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
                 />
               </div>

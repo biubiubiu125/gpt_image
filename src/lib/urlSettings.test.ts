@@ -556,7 +556,7 @@ describe('URL settings params', () => {
     })
     const next = normalizeSettings({
       ...current,
-      ...buildSettingsFromUrlParams(current, new URLSearchParams('apiUrl=https://api.example.com/v1&apiKey=test-key&model=custom-model&profileName=导入配置&apiMode=responses')),
+      ...buildSettingsFromUrlParams(current, new URLSearchParams('apiUrl=https://api.example.com/v1&apiKey=test-key&model=custom-model&profileName=导入配置&apiMode=responses&streamImages=false')),
     })
 
     expect(next.profiles).toHaveLength(1)
@@ -570,6 +570,7 @@ describe('URL settings params', () => {
       apiKey: 'test-key',
       model: 'custom-model',
       apiMode: 'responses',
+      streamImages: false,
     })
   })
 
