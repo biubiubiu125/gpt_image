@@ -465,6 +465,11 @@ try {
   )
   assert.match(
     renderedNginx,
+    /proxy_set_header Origin "";[\s\S]*?proxy_set_header Connection "";/,
+    'The API proxy must remove the browser Origin header before forwarding to same-origin-only upstreams',
+  )
+  assert.match(
+    renderedNginx,
     /proxy_set_header Connection "";[\s\S]*?proxy_set_header X-Real-IP/,
     'The API proxy must keep upstream streaming connections reusable',
   )

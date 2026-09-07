@@ -227,7 +227,7 @@ export default function SettingsModal() {
   const presetDeletionPrevented = isPresetConfigDeletionPrevented()
   const presetProfileIds = getPresetProfileIds()
   const activeProfile = draft.profiles.find((profile) => profile.id === draft.activeProfileId) ?? draft.profiles[0] ?? getActiveApiProfile(draft)
-  const presetIdentityLocked = presetConfigOnly && isPresetProfile(activeProfile.id)
+  const presetIdentityLocked = presetConfigOnly
   const visibleProfiles = presetConfigOnly
     ? draft.profiles.filter((profile) => presetProfileIds.has(profile.id))
     : draft.profiles

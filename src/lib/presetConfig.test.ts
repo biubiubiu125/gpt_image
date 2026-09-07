@@ -40,6 +40,63 @@ describe('preset config policy', () => {
     expect(policy.isPresetConfigOnlyEnabled()).toBe(true)
   })
 
+  it('locks a single RK API profile by default while leaving API proxy editable', async () => {
+    const { createDefaultOpenAIProfile, DEFAULT_SETTINGS, hasDefaultPresetConfig, normalizeSettings } = await import('./apiProfiles')
+    const policy = await import('./presetConfig')
+    const { useStore } = await import('../store')
+    const preset = createDefaultOpenAIProfile({
+      id: 'rk-api',
+      name: 'RK API',
+      baseUrl: 'https://api.veridiantech1.com/v1',
+      apiProxy: false,
+      isDefault: true,
+    })
+    expect(hasDefaultPresetConfig()).toBe(true)
+    policy.setPresetConfig({ customProviders: [], profiles: [preset] })
+
+    expect(policy.isPresetConfigOnlyEnabled()).toBe(true)
+    expect(policy.isPresetConfigParamsLocked()).toBe(false)
+
+    const enforced = policy.enforcePresetConfigPolicy(normalizeSettings({
+      activeProfileId: preset.id,
+      profiles: [{
+        ...preset,
+        name: '用户改名',
+        provider: 'fal',
+        baseUrl: 'https://other.example.com/v1',
+        apiProxy: true,
+        model: 'custom-model',
+      }],
+    }))
+
+    expect(enforced.profiles[0]).toMatchObject({
+      name: 'RK API',
+      provider: 'openai',
+      baseUrl: 'https://api.veridiantech1.com/v1',
+      apiProxy: true,
+      model: 'custom-model',
+    })
+
+    useStore.setState({ settings: normalizeSettings(DEFAULT_SETTINGS) })
+    await useStore.getState().setPresetImportedSettings({ customProviders: [], profiles: [preset] })
+    useStore.getState().setSettings({
+      profiles: [{
+        ...preset,
+        name: '再次改名',
+        provider: 'fal',
+        baseUrl: 'https://another.example.com/v1',
+        apiProxy: true,
+      }],
+    })
+
+    expect(useStore.getState().settings.profiles[0]).toMatchObject({
+      name: 'RK API',
+      provider: 'openai',
+      baseUrl: 'https://api.veridiantech1.com/v1',
+      apiProxy: true,
+    })
+  })
+
   it('rejects invalid RK single-config deployments', async () => {
     vi.stubEnv('VITE_SHOW_PRESET_CONFIG_ONLY', 'true')
     const { createDefaultFalProfile, createDefaultOpenAIProfile } = await import('./apiProfiles')

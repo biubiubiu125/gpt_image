@@ -11,6 +11,15 @@ let presetProviders: CustomProviderDefinition[] = []
 let presetProfileFields: Record<string, string[]> | undefined
 let defaultPresetProfileId: string | null = null
 
+export function isRkSingleConfig(settings: Pick<AppSettings, 'customProviders' | 'profiles'> | null): boolean {
+  return Boolean(
+    settings &&
+    settings.customProviders.length === 0 &&
+    settings.profiles.length === 1 &&
+    settings.profiles[0]?.provider === 'openai',
+  )
+}
+
 export function setPresetConfig(settings: Pick<AppSettings, 'customProviders' | 'profiles'> & {
   presetProfileFields?: Record<string, string[]>
 } | null) {
@@ -66,7 +75,10 @@ export function isPresetProvider(id: string) {
 }
 
 export function isPresetConfigOnlyEnabled() {
-  return SHOW_PRESET_CONFIG_ONLY && presetProfiles.length > 0
+  return presetProfiles.length > 0 && (
+    SHOW_PRESET_CONFIG_ONLY ||
+    isRkSingleConfig({ customProviders: presetProviders, profiles: presetProfiles })
+  )
 }
 
 export function isPresetConfigParamsLocked() {
@@ -76,7 +88,7 @@ export function isPresetConfigParamsLocked() {
 }
 
 export function isPresetConfigDeletionPrevented() {
-  return (PREVENT_PRESET_CONFIG_DELETION || SHOW_PRESET_CONFIG_ONLY) && presetProfiles.length > 0
+  return (PREVENT_PRESET_CONFIG_DELETION || isPresetConfigOnlyEnabled()) && presetProfiles.length > 0
 }
 
 export function validatePresetOnlyConfig(settings: Pick<AppSettings, 'customProviders' | 'profiles'> | null): string | null {

@@ -141,9 +141,9 @@
 | `VITE_DEFAULT_API_URL` | `DEFAULT_API_URL` | 设定预置配置值（支持 URL 形式或 JSON 格式，详见 [预置配置 JSON 格式](#preset-config-json)） |
 | `VITE_LOCK_PRESET_CONFIG_PARAMS=true` | `LOCK_PRESET_CONFIG_PARAMS=true` | 普通预置模式下锁定预置配置中除 API Key 外的参数，并禁止编辑预置供应商定义；当前锁定配置引用的供应商不可删除，解除引用后可删除。与下方 RK API 单配置模式同时开启时，以 RK API 单配置模式为准 |
 | `VITE_PREVENT_PRESET_CONFIG_DELETION=true` | `PREVENT_PRESET_CONFIG_DELETION=true` | 禁止删除预置配置和预置供应商，不锁定参数；普通项不受影响 |
-| `VITE_SHOW_PRESET_CONFIG_ONLY=true` | `SHOW_PRESET_CONFIG_ONLY=true` | RK API 单配置模式：只允许使用当前预置配置，创建、复制、删除、拖动、切换供应商和管理自定义供应商会显式禁用；配置名称、供应商和 API 地址固定，模型、API 接口、API Key 及其他参数仍可编辑，并优先于参数锁 |
+| `VITE_SHOW_PRESET_CONFIG_ONLY=true` | `SHOW_PRESET_CONFIG_ONLY=true` | 强制启用 RK API 单配置模式：只允许使用当前预置配置，创建、复制、删除、拖动、切换供应商和管理自定义供应商会显式禁用；配置名称、供应商和 API 地址固定，模型、API 接口、API Key 及其他参数仍可编辑，并优先于参数锁。内置 RK API 或仅包含一个 OpenAI-compatible 配置且没有自定义服务商时会自动启用，无需设置此变量 |
 
-> **未开启上述限制时的默认行为**：
+> **普通多配置预置模式下的默认行为（单配置模式除外）**：
 > - **参数更新**：API 地址、模型、超时等参数会与上一次部署快照比较；部署值发生变化时覆盖一次本地值，之后保留用户的本地修改，直到部署值再次变更。
 > - **API Key**：始终由用户在本地管理，重新部署不覆盖。
 > - **排序与删除**：预置配置可拖动；预置配置和预置供应商均允许删除，删除状态保存在浏览器中，重新部署不会恢复。

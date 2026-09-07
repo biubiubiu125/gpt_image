@@ -194,7 +194,8 @@ export function normalizeAgentMaxToolRounds(value: unknown, fallback: number | u
 }
 
 export function hasDefaultPresetConfig(): boolean {
-  return Boolean(RAW_DEFAULT_API_URL) || DEFAULT_OPENAI_API_PROXY
+  // RK API 是应用内置的默认预置配置，即使部署端没有额外传入地址也要进入单配置模式。
+  return true
 }
 
 export function getDefaultApiProfileId(settings: Partial<AppSettings> | unknown): string | null {

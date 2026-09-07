@@ -8,7 +8,7 @@ import 'katex/dist/katex.min.css'
 import './index.css'
 import { installMobileViewportGuards } from './lib/viewport'
 import { readRuntimeEnv } from './lib/runtimeEnv'
-import { setPresetConfig, validatePresetOnlyConfig } from './lib/presetConfig'
+import { isRkSingleConfig, setPresetConfig, validatePresetOnlyConfig } from './lib/presetConfig'
 
 installMobileViewportGuards()
 
@@ -44,13 +44,14 @@ async function bootstrap() {
             }
           : null
 
-    if (presetConfigOnlyRequested) {
+    const shouldUsePresetConfigOnly = presetConfigOnlyRequested || isRkSingleConfig(presetConfig)
+    if (shouldUsePresetConfigOnly) {
       const presetConfigError = validatePresetOnlyConfig(presetConfig)
       if (presetConfigError) throw new Error(presetConfigError)
     }
 
     setPresetConfig(presetConfig)
-    if (presetConfigOnlyRequested && presetConfig) {
+    if (shouldUsePresetConfigOnly && presetConfig) {
       const { useStore } = await import('./store')
       await useStore.getState().setPresetImportedSettings(presetConfig)
     }
