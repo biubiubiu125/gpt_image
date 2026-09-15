@@ -7,7 +7,7 @@
 - React 19 + Vite + TypeScript 前端应用，使用 Zustand 状态管理、Tailwind CSS 样式。
 - 源码在 `src/`，构建产物由 Vite 生成，不要手动编辑 `dist/`。
 - 包管理器为 npm（有 `package-lock.json`），不要使用 yarn 或 pnpm。
-- 当前对外品牌是 `gpt_image` / `RK API`，默认 API 地址是 `https://api.veridiantech1.com/v1`。
+- 当前对外显示名是 `GPT生图`，接口品牌是 `RK API`，仓库/包名仍是 `gpt_image`，默认 API 地址是 `https://api.veridiantech1.com/v1`。
 - GHCR 镜像固定为 `ghcr.io/biubiubiu125/gpt_image`；Docker 改动要同时看运行时注入、Nginx 代理和 workflow。
 
 ## 项目专有约定
