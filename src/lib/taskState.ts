@@ -58,6 +58,32 @@ export function mapActualParamsByImage(outputIds: string[], paramsList: Array<Ac
   return mapped && Object.keys(mapped).length > 0 ? mapped : undefined
 }
 
+/** 拆成 n=1 的子请求回显数量 1 时，不能把它当成这张图的实际数量。 */
+export function omitSplitSubrequestCount(requestedN: number, params: ActualParams | undefined): ActualParams | undefined {
+  if (!params || !(requestedN > 1) || params.n !== 1) return params
+  const next = { ...params }
+  delete next.n
+  return hasActualParams(next) ? next : undefined
+}
+
+export function mapGalleryPerImageActualParams(
+  requestedN: number,
+  outputIds: string[],
+  paramsList: Array<ActualParams | undefined> | undefined,
+) {
+  return mapActualParamsByImage(outputIds, paramsList?.map((params) => omitSplitSubrequestCount(requestedN, params)))
+}
+
+export function resolveDisplayedActualParams(
+  requestedN: number,
+  taskParams: ActualParams | undefined,
+  imageParams: ActualParams | undefined,
+): ActualParams | undefined {
+  const cleaned = omitSplitSubrequestCount(requestedN, imageParams)
+  if (!hasActualParams(taskParams) && !cleaned) return undefined
+  return { ...(taskParams ?? {}), ...(cleaned ?? {}) }
+}
+
 export function hasActualSizeParam(params: ActualParams | undefined) {
   return Boolean(params?.size)
 }

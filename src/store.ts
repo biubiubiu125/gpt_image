@@ -49,7 +49,7 @@ import { callAgentConversationTitleApi, callAgentResponsesApi, callBatchImageSin
 import { buildAgentApiInput, buildAgentContinuationInput } from './lib/agentInputBuilder'
 import { collectAgentRoundOutputImageSlots, extractAgentReferenceIds, getAgentCurrentReferenceId, getAgentGeneratedImageReferenceId } from './lib/agentImageReferences'
 import { showBrowserNotification } from './lib/browserNotification'
-import { IMAGE_FETCH_CORS_HINT } from './lib/imageApiShared'
+import { IMAGE_FETCH_CORS_HINT, resolveStoredImageSlots } from './lib/imageApiShared'
 import { getFalErrorMessage, getFalQueuedImageResult } from './lib/falAiImageApi'
 import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
 import { validateMaskMatchesImage } from './lib/canvasImage'
@@ -66,7 +66,7 @@ import { canonicalizeBatchFunctionCallArguments, countResponseToolCalls, createR
 import { cleanStaleAgentInputDrafts, clearInputDraftState, isEmptyAgentInputDraft, normalizeAgentInputDrafts, remapAgentInputDraftMentionsForPathChange, restoreAgentInputDraftState, restoreGalleryInputDraftState, saveActiveAgentInputDrafts, saveGalleryInputDraft, syncActiveInputDraft, updateInputDraftImages } from './lib/inputDraftState'
 import { ALL_FAVORITES_COLLECTION_ID, DEFAULT_FAVORITE_COLLECTION_ID, createDefaultFavoriteCollection, deleteFavoriteCollectionState, ensureDefaultFavoriteCollection, getTaskFavoriteCollectionIds, mergeFavoriteCollections, normalizeFavoriteCollectionIds, normalizeFavoriteCollectionName, normalizeFavoriteCollections, normalizeFavoritePatch, normalizeLoadedFavoriteState, resolveDefaultFavoriteCollectionId, sameFavoriteCollectionIds } from './lib/favoriteState'
 import { createPersistedState, mergePersistedAgentConversations, migratePersistedState, normalizePersistedState } from './lib/persistedState'
-import { addImageSizeParam, createTaskDonePatch, createTaskErrorPatch, deriveAgentImageActualParams, deriveGalleryActualParams, firstActualParams, hasActualParams, hasActualSizeParam, mapActualParamsByImage, mapRevisedPromptsByImage, markInterruptedOpenAIRunningTasks } from './lib/taskState'
+import { addImageSizeParam, createTaskDonePatch, createTaskErrorPatch, deriveAgentImageActualParams, deriveGalleryActualParams, firstActualParams, hasActualParams, hasActualSizeParam, mapActualParamsByImage, mapGalleryPerImageActualParams, mapRevisedPromptsByImage, markInterruptedOpenAIRunningTasks, omitSplitSubrequestCount } from './lib/taskState'
 import { stripInjectedCodexCliSizePrompt } from './lib/size'
 import { API_BRAND_NAME } from './lib/branding'
 
@@ -1128,10 +1128,7 @@ function scheduleOpenAIWatchdog(taskId: string, timeoutSeconds: number, profile?
 function usesConcurrentImageRequests(settings: AppSettings, profile: ApiProfile, params: TaskParams, hasInputImages: boolean) {
   const n = params.n > 0 ? params.n : 1
   if (n <= 1) return false
-  if (profile.provider === 'openai') {
-    if (profile.apiMode === 'responses') return true
-    return profile.apiMode === 'images' && (profile.codexCli || profile.streamImages)
-  }
+  if (profile.provider === 'openai') return true
   return profile.provider !== 'fal' && profile.codexCli && !isAsyncCustomProviderTask(settings, profile.provider, hasInputImages)
 }
 
@@ -3538,6 +3535,46 @@ async function executeAgentRound(
   }
 }
 
+type ProgressiveOutputImage = {
+  requestIndex: number
+  imageIndex: number
+  dataUrl: string
+  storedDataUrl: string
+  imageId: string
+  transparentOriginalImageId?: string
+  width?: number
+  height?: number
+}
+
+function matchProgressiveOutputImages(resultImages: string[], stored: ProgressiveOutputImage[]) {
+  const ordered = [...stored].sort((a, b) => a.requestIndex - b.requestIndex || a.imageIndex - b.imageIndex)
+  if (ordered.length !== resultImages.length) return null
+  if (ordered.some((item, index) => item.dataUrl !== resultImages[index])) return null
+  return ordered
+}
+
+function clearTaskStreamPreviewSlot(taskId: string, requestIndex: number) {
+  useStore.setState((state) => {
+    const currentSlots = state.streamPreviewSlots[taskId]
+    const slotKey = String(requestIndex)
+    if (!currentSlots || !(slotKey in currentSlots)) return {}
+    const nextSlot = { ...currentSlots }
+    delete nextSlot[slotKey]
+    const nextSlots = { ...state.streamPreviewSlots }
+    const nextPreviews = { ...state.streamPreviews }
+    const remaining = Object.values(nextSlot).filter(Boolean)
+    if (Object.keys(nextSlot).length > 0) {
+      nextSlots[taskId] = nextSlot
+      if (remaining.length > 0) nextPreviews[taskId] = remaining[remaining.length - 1]
+      else delete nextPreviews[taskId]
+    } else {
+      delete nextSlots[taskId]
+      delete nextPreviews[taskId]
+    }
+    return { streamPreviewSlots: nextSlots, streamPreviews: nextPreviews }
+  })
+}
+
 async function executeTask(taskId: string) {
   const { settings } = useStore.getState()
   const task = useStore.getState().tasks.find((t) => t.id === taskId)
@@ -3596,6 +3633,78 @@ async function executeTask(taskId: string) {
       ? task.transparentPrompt
       : task.prompt
 
+    const progressiveOutputs: ProgressiveOutputImage[] = []
+    let progressiveQueue = Promise.resolve()
+    const saveCompletedImage = async (completed: {
+      image: string
+      requestIndex: number
+      imageIndex: number
+      actualParams?: Partial<TaskParams>
+      revisedPrompt?: string
+    }) => {
+      if (progressiveOutputs.some((item) => item.requestIndex === completed.requestIndex && item.imageIndex === completed.imageIndex)) return
+      const latest = useStore.getState().tasks.find((item) => item.id === taskId)
+      if (!latest || latest.status !== 'running') return
+
+      const stored = await storeTaskOutputImages(task, [completed.image])
+      const imageId = stored.outputIds[0]
+      if (!imageId) return
+      const afterStore = useStore.getState().tasks.find((item) => item.id === taskId)
+      if (!afterStore || afterStore.status !== 'running') {
+        await deleteUnreferencedImageIds([...stored.outputIds, ...(stored.transparentOriginalImageIds ?? [])])
+        return
+      }
+
+      const entry: ProgressiveOutputImage = {
+        requestIndex: completed.requestIndex,
+        imageIndex: completed.imageIndex,
+        dataUrl: completed.image,
+        storedDataUrl: stored.outputDataUrls[0] ?? completed.image,
+        imageId,
+        transparentOriginalImageId: stored.transparentOriginalImageIds?.[0],
+        width: stored.outputImageSizes[0]?.width,
+        height: stored.outputImageSizes[0]?.height,
+      }
+      progressiveOutputs.push(entry)
+
+      const outputImages = [...afterStore.outputImages, imageId]
+      const outputImageRequestIndexes = [
+        ...(afterStore.outputImageRequestIndexes ?? afterStore.outputImages.map((_, index) => index)),
+        completed.requestIndex,
+      ]
+      const outputImageSubIndexes = [
+        ...(afterStore.outputImageSubIndexes ?? afterStore.outputImages.map(() => 0)),
+        completed.imageIndex,
+      ]
+      const imageActualParams = omitSplitSubrequestCount(task.params.n, completed.actualParams)
+      const transparentOriginalImages = entry.transparentOriginalImageId || afterStore.transparentOriginalImages?.length
+        ? outputImages.map((id) => {
+          if (id === imageId) return entry.transparentOriginalImageId ?? ''
+          const previousIndex = afterStore.outputImages.indexOf(id)
+          return afterStore.transparentOriginalImages?.[previousIndex] ?? ''
+        })
+        : undefined
+      const revisedPrompt = activeProfile.codexCli && task.sourceMode !== 'agent' && completed.revisedPrompt
+        ? stripInjectedCodexCliSizePrompt(completed.revisedPrompt, requestPrompt, task.params.size)
+        : completed.revisedPrompt
+      const actualParamsByImage = { ...(afterStore.actualParamsByImage ?? {}) }
+      if (imageActualParams && Object.keys(imageActualParams).length > 0) {
+        actualParamsByImage[imageId] = imageActualParams
+      }
+      const revisedPromptByImage = { ...(afterStore.revisedPromptByImage ?? {}) }
+      if (revisedPrompt?.trim()) revisedPromptByImage[imageId] = revisedPrompt
+
+      updateTaskInStore(taskId, {
+        outputImages,
+        outputImageRequestIndexes,
+        outputImageSubIndexes,
+        transparentOriginalImages,
+        actualParamsByImage: Object.keys(actualParamsByImage).length > 0 ? actualParamsByImage : undefined,
+        revisedPromptByImage: Object.keys(revisedPromptByImage).length > 0 ? revisedPromptByImage : undefined,
+      })
+      clearTaskStreamPreviewSlot(taskId, completed.requestIndex)
+    }
+
     const result = await callImageApi({
       settings: requestSettings,
       prompt: replaceImageMentionsForApi(requestPrompt, inputDataUrls.length),
@@ -3623,7 +3732,27 @@ async function executeTask(taskId: string) {
         useStore.getState().setTaskStreamPreview(taskId, partial.image, partial.requestIndex)
         void persistTaskStreamPartialImage(taskId, partial.image)
       },
+      onCompletedImage: (completed) => {
+        const job = progressiveQueue.then(() => saveCompletedImage(completed))
+        progressiveQueue = job.then(() => undefined, () => undefined)
+        return job
+      },
+      onFailedRequest: (failure) => {
+        const job = progressiveQueue.then(async () => {
+          const latest = useStore.getState().tasks.find((item) => item.id === taskId)
+          if (!latest || latest.status !== 'running') return
+          if (latest.outputErrors?.some((item) => item.requestIndex === failure.requestIndex)) return
+          if (progressiveOutputs.some((item) => item.requestIndex === failure.requestIndex)) return
+          updateTaskInStore(taskId, {
+            outputErrors: [...(latest.outputErrors ?? []), { requestIndex: failure.requestIndex, error: failure.error }],
+          })
+          clearTaskStreamPreviewSlot(taskId, failure.requestIndex)
+        })
+        progressiveQueue = job.then(() => undefined, () => undefined)
+        return job
+      },
     })
+    await progressiveQueue
 
     const latestBeforeSuccess = useStore.getState().tasks.find((t) => t.id === taskId)
     if (!latestBeforeSuccess || latestBeforeSuccess.status !== 'running') {
@@ -3631,8 +3760,22 @@ async function executeTask(taskId: string) {
       return
     }
 
-    // 存储输出图片
-    const { outputIds, outputDataUrls, outputImageSizes, transparentOriginalImageIds } = await storeTaskOutputImages(task, result.images)
+    // 优先复用已经提前展示的图片，避免最终汇总时重新落库导致闪烁。
+    const reusableOutputs = matchProgressiveOutputImages(result.images, progressiveOutputs)
+    const replacedProgressiveIds = reusableOutputs
+      ? []
+      : progressiveOutputs.flatMap((item) => [item.imageId, item.transparentOriginalImageId ?? ''])
+    const storedOutputs = reusableOutputs
+      ? {
+          outputIds: reusableOutputs.map((item) => item.imageId),
+          outputDataUrls: reusableOutputs.map((item) => item.storedDataUrl),
+          outputImageSizes: reusableOutputs.map((item) => ({ width: item.width, height: item.height })),
+          transparentOriginalImageIds: reusableOutputs.some((item) => item.transparentOriginalImageId)
+            ? reusableOutputs.map((item) => item.transparentOriginalImageId ?? '')
+            : undefined,
+        }
+      : await storeTaskOutputImages(task, result.images)
+    const { outputIds, outputDataUrls, outputImageSizes, transparentOriginalImageIds } = storedOutputs
     const isAsyncCustomTask = taskProvider !== 'fal' && taskProvider !== 'openai' && Boolean(customTaskInfo)
     const actualParamsList = await resolveImageSizeParamsList(
       outputDataUrls,
@@ -3641,7 +3784,7 @@ async function executeTask(taskId: string) {
     )
     const actualParams = deriveGalleryActualParams(taskProvider, isAsyncCustomTask, result.actualParams, actualParamsList, outputIds.length)
     const shouldStoreRevisedPrompts = taskProvider !== 'fal' && !isAsyncCustomTask
-    const actualParamsByImage = mapActualParamsByImage(outputIds, actualParamsList)
+    const actualParamsByImage = mapGalleryPerImageActualParams(task.params.n, outputIds, actualParamsList)
     const revisedPrompts = activeProfile.codexCli && task.sourceMode !== 'agent'
       ? result.revisedPrompts?.map((prompt) => prompt == null ? prompt : stripInjectedCodexCliSizePrompt(prompt, requestPrompt, task.params.size))
       : result.revisedPrompts
@@ -3668,8 +3811,13 @@ async function executeTask(taskId: string) {
     const partialImageIdsToClean = latestBeforeUpdate.streamPartialImageIds || []
     clearOpenAIWatchdogTimer(taskId)
     useStore.getState().setTaskStreamPreview(taskId)
+    const imageSlots = outputIds.length > 0 && outputIds.length === result.images.length
+      ? resolveStoredImageSlots(result)
+      : undefined
     updateTaskInStore(taskId, {
       outputImages: outputIds,
+      outputImageRequestIndexes: imageSlots?.map((slot) => slot.requestIndex),
+      outputImageSubIndexes: imageSlots?.map((slot) => slot.imageIndex),
       transparentOriginalImages: transparentOriginalImageIds,
       outputErrors: result.failedRequests?.length ? result.failedRequests : undefined,
       streamPartialImageIds: undefined,
@@ -3681,7 +3829,7 @@ async function executeTask(taskId: string) {
       falRecoverable: false,
       customRecoverable: false,
     })
-    void deleteUnreferencedImageIds(partialImageIdsToClean)
+    void deleteUnreferencedImageIds([...partialImageIdsToClean, ...replacedProgressiveIds])
 
     const failedCount = result.failedRequests?.length ?? 0
     const completionMessage = failedCount > 0

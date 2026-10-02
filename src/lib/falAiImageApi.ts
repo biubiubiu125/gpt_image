@@ -14,6 +14,7 @@ import {
   mergeActualParams,
   MIME_MAP,
   normalizeBase64Image,
+  publishCompletedImages,
 } from './imageApiShared'
 
 const DEFAULT_FAL_IMAGE_SIZE = { width: 1360, height: 1024 }
@@ -218,7 +219,9 @@ export async function callFalAiImageApi(opts: CallApiOptions, profile: ApiProfil
     })
     const payload = result.data as FalApiResponse
     opts.onFalRequestEnqueued?.({ requestId: result.requestId, endpoint })
-    return parseFalResult(payload, opts.params, getFalCustomBaseUrlLabel(profile))
+    const parsed = await parseFalResult(payload, opts.params, getFalCustomBaseUrlLabel(profile))
+    await publishCompletedImages(opts, parsed, 0, { spreadRequestSlots: true })
+    return parsed
   } catch (err) {
     const falMessage = getFalErrorMessage(err)
     if (falMessage) throw new Error(falMessage)

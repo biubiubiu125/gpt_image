@@ -20,6 +20,8 @@ import {
   MIME_MAP,
   normalizeBase64Image,
   pickActualParams,
+  publishCompletedImages,
+  publishFailedRequest,
   PROMPT_REWRITE_GUARD_PREFIX,
 } from './imageApiShared'
 import { isEventStreamResponse, readJsonServerSentEvents } from './serverSentEvents'
@@ -438,7 +440,9 @@ export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile
       : customProvider.submit
     const isAsync = Boolean(submitMapping.taskIdPath)
     if (profile.codexCli && n > 1 && !isAsync) return callCustomHttpImageApiConcurrent(opts, profile, customProvider, n)
-    return callCustomHttpImageApi(opts, profile, customProvider)
+    const result = await callCustomHttpImageApi(opts, profile, customProvider)
+    await publishCompletedImages(opts, result, 0, { spreadRequestSlots: true })
+    return result
   }
 
   return profile.apiMode === 'responses'
@@ -448,11 +452,26 @@ export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile
 
 async function callImagesApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
   const n = opts.params.n > 0 ? opts.params.n : 1
-  if ((profile.codexCli || (profile.streamImages && n > 1)) && n > 1) {
-    return callImagesApiConcurrent(opts, profile, n)
-  }
+  if (n > 1) return callImagesApiConcurrent(opts, profile, n)
 
-  return callImagesApiSingle(opts, profile)
+  const result = await callImagesApiSingle(opts, profile)
+  await publishCompletedImages(opts, result, 0, { spreadRequestSlots: true })
+  return result
+}
+
+async function runConcurrentImageRequest(
+  opts: CallApiOptions,
+  requestIndex: number,
+  run: () => Promise<CallApiResult>,
+): Promise<CallApiResult> {
+  try {
+    const result = await run()
+    await publishCompletedImages(opts, result, requestIndex)
+    return result
+  } catch (error) {
+    await publishFailedRequest(opts, requestIndex, error)
+    throw error
+  }
 }
 
 async function callImagesApiConcurrent(opts: CallApiOptions, profile: ApiProfile, n: number): Promise<CallApiResult> {
@@ -465,12 +484,12 @@ async function callImagesApiConcurrent(opts: CallApiOptions, profile: ApiProfile
     },
   }
   const results = await Promise.allSettled(
-    Array.from({ length: n }).map((_, requestIndex) => callImagesApiSingle({
+    Array.from({ length: n }).map((_, requestIndex) => runConcurrentImageRequest(opts, requestIndex, () => callImagesApiSingle({
       ...singleOpts,
       onPartialImage: opts.onPartialImage
         ? (partial) => opts.onPartialImage?.({ ...partial, requestIndex })
         : undefined,
-    }, profile)),
+    }, profile))),
   )
 
   return mergeConcurrentApiResults(results)
@@ -962,12 +981,18 @@ function mergeConcurrentApiResults(results: PromiseSettledResult<CallApiResult>[
   const failedRequests = results.flatMap((result, requestIndex) =>
     result.status === 'rejected' ? [{ requestIndex, error: getErrorMessage(result.reason) }] : [],
   )
+  const imageSlots = results.flatMap((result, requestIndex) => (
+    result.status === 'fulfilled'
+      ? result.value.images.map((_, imageIndex) => ({ requestIndex, imageIndex }))
+      : []
+  ))
 
   return {
     images,
     actualParams: mergeActualParams(successfulResults[0].actualParams ?? {}, { n: images.length }),
     actualParamsList,
     revisedPrompts,
+    imageSlots,
     ...(rawImageUrls.length ? { rawImageUrls } : {}),
     ...(failedRequests.length ? { failedRequests } : {}),
   }
@@ -979,26 +1004,35 @@ async function callCustomHttpImageApiConcurrent(
   customProvider: CustomProviderDefinition,
   n: number,
 ): Promise<CallApiResult> {
-  const results = await Promise.allSettled(Array.from({ length: n }).map(() => callCustomHttpImageApi({
-    ...opts,
-    params: { ...opts.params, n: 1 },
-  }, profile, customProvider)))
+  const results = await Promise.allSettled(Array.from({ length: n }).map((_, requestIndex) => runConcurrentImageRequest(
+    opts,
+    requestIndex,
+    () => callCustomHttpImageApi({
+      ...opts,
+      params: { ...opts.params, n: 1 },
+    }, profile, customProvider),
+  )))
   return mergeConcurrentApiResults(results)
 }
 
 async function callResponsesImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
   const n = opts.params.n > 0 ? opts.params.n : 1
   if (n === 1) {
-    return callResponsesImageApiSingle(opts, profile)
+    const result = await callResponsesImageApiSingle(opts, profile)
+    await publishCompletedImages(opts, result, 0, { spreadRequestSlots: true })
+    return result
   }
 
-  const promises = Array.from({ length: n }).map((_, requestIndex) => callResponsesImageApiSingle({
-    ...opts,
-    onPartialImage: opts.onPartialImage
-      ? (partial) => opts.onPartialImage?.({ ...partial, requestIndex })
-      : undefined,
-  }, profile))
-  const results = await Promise.allSettled(promises)
+  const results = await Promise.allSettled(Array.from({ length: n }).map((_, requestIndex) => runConcurrentImageRequest(
+    opts,
+    requestIndex,
+    () => callResponsesImageApiSingle({
+      ...opts,
+      onPartialImage: opts.onPartialImage
+        ? (partial) => opts.onPartialImage?.({ ...partial, requestIndex })
+        : undefined,
+    }, profile),
+  )))
   return mergeConcurrentApiResults(results)
 }
 

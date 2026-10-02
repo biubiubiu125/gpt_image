@@ -6,6 +6,7 @@ import { formatImageRatio } from '../lib/size'
 import { getParamDisplay, ActualValueBadge } from '../lib/paramDisplay'
 import { DEFAULT_IMAGES_MODEL, DEFAULT_RESPONSES_MODEL, DEFAULT_FAL_MODEL, getApiProfileDisplayName, getApiProviderLabel } from '../lib/apiProfiles'
 import { isAgentTaskPromptPending } from '../lib/taskPromptDisplay'
+import { buildVisibleOutputSlots, earliestOutputImageId } from '../lib/runningOutputSlots'
 import { CodeIcon, TransparentBgIcon } from './icons'
 import ViewportTooltip from './ViewportTooltip'
 
@@ -246,6 +247,16 @@ export default function TaskCard({
     return () => clearInterval(id)
   }, [task.customRecoverable, task.falRecoverable, task.status])
 
+  const coverImageId = earliestOutputImageId(task) || ''
+  const visibleOutputImageIds = buildVisibleOutputSlots({
+    status: task.status,
+    requestedCount: task.params.n,
+    outputImages: task.outputImages,
+    outputImageRequestIndexes: task.outputImageRequestIndexes,
+    outputImageSubIndexes: task.outputImageSubIndexes,
+    outputErrors: task.outputErrors,
+  }).flatMap((slot) => slot.imageId ? [slot.imageId] : [])
+
   // 加载缩略图
   useEffect(() => {
     setCoverRatio('')
@@ -253,7 +264,7 @@ export default function TaskCard({
     setThumbSrc('')
 
     let cancelled = false
-    const imageId = task.outputImages?.[0]
+    const imageId = coverImageId
     let unsubscribe: (() => void) | undefined
 
     const applyThumbnail = (thumbnail: { dataUrl: string; width?: number; height?: number }) => {
@@ -279,7 +290,7 @@ export default function TaskCard({
       cancelled = true
       unsubscribe?.()
     }
-  }, [task.outputImages])
+  }, [coverImageId])
 
   const duration = (() => {
     let seconds: number
@@ -376,10 +387,10 @@ export default function TaskCard({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchCancel}
-        draggable={task.status === 'done' && task.outputImages?.length > 0}
+        draggable={task.status === 'done' && visibleOutputImageIds.length > 0}
         onDragStart={(e) => {
-          if (task.status !== 'done' || !task.outputImages?.length) return;
-          const imageIds = task.outputImages;
+          if (task.status !== 'done' || !visibleOutputImageIds.length) return;
+          const imageIds = visibleOutputImageIds;
           e.dataTransfer.setData('text/plain', `agent-images:${imageIds.join(',')}`);
           e.dataTransfer.effectAllowed = 'copy';
           // Optionally set drag image if we have thumbSrc
@@ -407,7 +418,27 @@ export default function TaskCard({
       <div className="flex h-40">
         {/* 左侧图片区域 */}
         <div className="w-40 min-w-[10rem] h-full bg-gray-100 dark:bg-black/20 relative flex items-center justify-center overflow-hidden flex-shrink-0">
-          {task.status === 'running' && streamPreviewSrc && (
+          {task.status === 'running' && thumbSrc && (
+            <>
+              <img
+                src={thumbSrc}
+                data-image-id={coverImageId}
+                data-output-image-ids={visibleOutputImageIds.join(',')}
+                className="saveable-image w-full h-full object-cover"
+                loading="lazy"
+                alt=""
+              />
+              <span className="absolute top-1.5 right-1.5 flex items-center gap-1 rounded bg-emerald-500 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm sm:text-xs">
+                已完成
+              </span>
+              {task.params.n > 1 && (
+                <span className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
+                  {outputSuccessCount}/{Math.max(task.params.n, outputSuccessCount)}
+                </span>
+              )}
+            </>
+          )}
+          {task.status === 'running' && !thumbSrc && streamPreviewSrc && (
             <>
               <img
                 src={streamPreviewSrc}
@@ -423,7 +454,7 @@ export default function TaskCard({
               )}
             </>
           )}
-          {task.status === 'running' && (!streamPreviewSrc || !streamPreviewLoaded) && (
+          {task.status === 'running' && !thumbSrc && (!streamPreviewSrc || !streamPreviewLoaded) && (
             <div className="flex flex-col items-center gap-2">
               <svg
                 className="w-8 h-8 text-blue-400 animate-spin"
@@ -467,7 +498,24 @@ export default function TaskCard({
               </span>
             </div>
           )}
-          {task.status === 'error' && !isFalReconnecting && (
+          {task.status === 'error' && !isFalReconnecting && thumbSrc && (
+            <>
+              <img
+                src={thumbSrc}
+                data-image-id={coverImageId}
+                data-output-image-ids={visibleOutputImageIds.join(',')}
+                className="saveable-image w-full h-full object-cover"
+                loading="lazy"
+                alt=""
+              />
+              <span className={`absolute top-1.5 right-1.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-white sm:text-xs ${
+                isInterrupted ? 'bg-yellow-500' : 'bg-red-500'
+              }`}>
+                {isInterrupted ? '已中断' : '失败'}
+              </span>
+            </>
+          )}
+          {task.status === 'error' && !isFalReconnecting && !thumbSrc && (
             <div className="flex flex-col items-center gap-1 px-2">
               <svg
                 className={`w-7 h-7 ${isInterrupted ? 'text-yellow-400' : 'text-red-400'}`}
@@ -491,8 +539,8 @@ export default function TaskCard({
             <>
               <img
                 src={thumbSrc}
-                data-image-id={task.outputImages[0]}
-                data-output-image-ids={task.outputImages.join(',')}
+                data-image-id={coverImageId}
+                data-output-image-ids={visibleOutputImageIds.join(',')}
                 className="saveable-image w-full h-full object-cover"
                 loading="lazy"
                 alt=""

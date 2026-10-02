@@ -23,6 +23,19 @@ export interface CallApiOptions {
   onFalRequestEnqueued?: (request: { requestId: string; endpoint: string }) => void
   onCustomTaskEnqueued?: (task: { taskId: string }) => void
   onPartialImage?: (partial: { image: string; partialImageIndex?: number; requestIndex?: number }) => void
+  /** 并发或多图响应中，每张图片一生成就回调；不影响最终结果汇总。 */
+  onCompletedImage?: (image: CompletedApiImage) => void | Promise<void>
+  /** 并发子请求失败时立刻回调；不影响最终结果汇总。 */
+  onFailedRequest?: (failure: { requestIndex: number; error: string }) => void | Promise<void>
+}
+
+export interface CompletedApiImage {
+  image: string
+  /** 并发请求序号。同一请求内的多张图仍使用这个序号，不占用其他请求的槽位。 */
+  requestIndex: number
+  imageIndex: number
+  actualParams?: Partial<TaskParams>
+  revisedPrompt?: string
 }
 
 export interface CallApiResult {
@@ -38,6 +51,18 @@ export interface CallApiResult {
   rawImageUrls?: string[]
   /** 并发多图请求中失败的单张请求 */
   failedRequests?: Array<{ requestIndex: number; error: string }>
+  /** 与 images 一一对应的请求槽位。未拆分的一次响应按图片顺序摆开。 */
+  imageSlots?: OutputImageSlot[]
+}
+
+export interface OutputImageSlot {
+  requestIndex: number
+  imageIndex: number
+}
+
+export function resolveStoredImageSlots(result: Pick<CallApiResult, 'images' | 'imageSlots'>): OutputImageSlot[] {
+  if (result.imageSlots && result.imageSlots.length === result.images.length) return result.imageSlots
+  return result.images.map((_, index) => ({ requestIndex: index, imageIndex: 0 }))
 }
 
 export function isHttpUrl(value: unknown): value is string {
@@ -225,4 +250,45 @@ export function pickActualParams(source: unknown): Partial<TaskParams> {
 export function mergeActualParams(...sources: Array<Partial<TaskParams> | undefined>): Partial<TaskParams> | undefined {
   const merged = Object.assign({}, ...sources.filter((source) => source && Object.keys(source).length))
   return Object.keys(merged).length ? merged : undefined
+}
+
+export async function publishCompletedImages(
+  opts: CallApiOptions,
+  result: CallApiResult,
+  requestIndex: number,
+  options?: { spreadRequestSlots?: boolean },
+) {
+  if (!opts.onCompletedImage || result.images.length === 0) return
+  if (options?.spreadRequestSlots) {
+    result.imageSlots = result.images.map((_, imageIndex) => ({
+      requestIndex: requestIndex + imageIndex,
+      imageIndex: 0,
+    }))
+  }
+  for (let imageIndex = 0; imageIndex < result.images.length; imageIndex += 1) {
+    const slot = options?.spreadRequestSlots
+      ? { requestIndex: requestIndex + imageIndex, imageIndex: 0 }
+      : { requestIndex, imageIndex }
+    try {
+      await opts.onCompletedImage({
+        image: result.images[imageIndex],
+        requestIndex: slot.requestIndex,
+        imageIndex: slot.imageIndex,
+        actualParams: result.actualParamsList?.[imageIndex] ?? result.actualParams,
+        revisedPrompt: result.revisedPrompts?.[imageIndex],
+      })
+    } catch (error) {
+      console.warn('完成图片回调失败', error)
+    }
+  }
+}
+
+export async function publishFailedRequest(opts: CallApiOptions, requestIndex: number, error: unknown) {
+  if (!opts.onFailedRequest) return
+  const message = error instanceof Error ? error.message : String(error)
+  try {
+    await opts.onFailedRequest({ requestIndex, error: message })
+  } catch (callbackError) {
+    console.warn('失败请求回调失败', callbackError)
+  }
 }

@@ -66,4 +66,31 @@ describe('callFalAiImageApi', () => {
       proxyUrl: 'https://fal-proxy.example.com/api/fal',
     })
   })
+
+  it('publishes each fal image on its own slot instead of stacking them on the first request', async () => {
+    falMock.subscribe.mockResolvedValue({
+      requestId: 'req-1',
+      data: { images: [{ b64_json: 'YQ==' }, { b64_json: 'Yg==' }] },
+    })
+    const completed: Array<{ requestIndex: number; imageIndex: number }> = []
+
+    const result = await callFalAiImageApi({
+      settings: DEFAULT_SETTINGS,
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, n: 4 },
+      inputImageDataUrls: [],
+      onCompletedImage: (image) => {
+        completed.push({ requestIndex: image.requestIndex, imageIndex: image.imageIndex })
+      },
+    }, createDefaultFalProfile({ apiKey: 'fal-key', baseUrl: DEFAULT_FAL_BASE_URL }))
+
+    expect(completed).toEqual([
+      { requestIndex: 0, imageIndex: 0 },
+      { requestIndex: 1, imageIndex: 0 },
+    ])
+    expect(result.imageSlots).toEqual([
+      { requestIndex: 0, imageIndex: 0 },
+      { requestIndex: 1, imageIndex: 0 },
+    ])
+  })
 })

@@ -13,6 +13,8 @@ import { downloadImageEntriesAsZip, downloadImageIds, getImageZipEntries } from 
 import { isAgentTaskPromptPending } from '../lib/taskPromptDisplay'
 import { replaceImageMentionsForApi } from '../lib/promptImageMentions'
 import { getApiProfileDisplayName, getApiProviderLabel } from '../lib/apiProfiles'
+import { buildStreamPreviewItems, buildVisibleOutputSlots, findStreamPreviewSrc } from '../lib/runningOutputSlots'
+import { resolveDisplayedActualParams } from '../lib/taskState'
 import { CloseIcon, CodeIcon, CopyIcon, DownloadIcon, EditIcon, LinkIcon, TrashIcon } from './icons'
 
 import ViewportTooltip from './ViewportTooltip'
@@ -27,7 +29,6 @@ export default function DetailModal() {
   const openFavoritePicker = useStore((s) => s.openFavoritePicker)
   const settings = useStore((s) => s.settings)
   const dismissedCodexCliPrompts = useStore((s) => s.dismissedCodexCliPrompts)
-  const streamPreviewSrc = useStore((s) => detailTaskId ? s.streamPreviews[detailTaskId] || '' : '')
   const streamPreviewSlots = useStore((s) => detailTaskId ? s.streamPreviewSlots[detailTaskId] : undefined)
 
   const [imageIndex, setImageIndex] = useState(0)
@@ -65,38 +66,22 @@ export default function DetailModal() {
     () => tasks.find((t) => t.id === detailTaskId) ?? null,
     [tasks, detailTaskId],
   )
-  const streamPreviewItems = useMemo(() => {
-    const slotEntries = streamPreviewSlots
-      ? Object.entries(streamPreviewSlots)
-          .filter(([, src]) => Boolean(src))
-          .sort(([a], [b]) => Number(a) - Number(b))
-      : []
-    const count = Math.max(
-      task?.status === 'running' ? task.params.n : 0,
-      slotEntries.length ? Math.max(...slotEntries.map(([key]) => Number(key) + 1)) : 0,
-      streamPreviewSrc ? 1 : 0,
-    )
-    const byIndex = new Map(slotEntries.map(([key, src]) => [Number(key), src]))
-
-    return Array.from({ length: count }, (_, index) => ({
-      key: String(index),
-      src: byIndex.get(index) ?? (index === 0 ? streamPreviewSrc : ''),
-    }))
-  }, [task?.params.n, task?.status, streamPreviewSlots, streamPreviewSrc])
-  const activeStreamPreviewSrc = streamPreviewItems[imageIndex]?.src || ''
+  const streamPreviewItems = useMemo(
+    () => buildStreamPreviewItems(task?.params.n ?? 0, streamPreviewSlots, task?.status),
+    [task?.params.n, task?.status, streamPreviewSlots],
+  )
 
   useEffect(() => {
-    setStreamPreviewLoaded(false)
-  }, [activeStreamPreviewSrc, detailTaskId, imageIndex])
-
-  useEffect(() => {
-    const count = task?.status === 'running'
-      ? streamPreviewItems.length
-      : task
-      ? (task.outputErrors?.length ? Math.max(task.params.n, task.outputImages.length + task.outputErrors.length) : task.outputImages.length)
-      : 0
+    const count = task ? buildVisibleOutputSlots({
+      status: task.status,
+      requestedCount: task.params.n,
+      outputImages: task.outputImages,
+      outputImageRequestIndexes: task.outputImageRequestIndexes,
+      outputImageSubIndexes: task.outputImageSubIndexes,
+      outputErrors: task.outputErrors,
+    }).length : 0
     if (count > 0 && imageIndex >= count) setImageIndex(count - 1)
-  }, [imageIndex, streamPreviewItems.length, task, task?.status])
+  }, [imageIndex, task])
 
   useCloseOnEscape(Boolean(task), () => setDetailTaskId(null))
   usePreventBackgroundScroll(Boolean(task), [modalRef, rawUrlsModalRef, rawResponseModalRef])
@@ -152,32 +137,24 @@ export default function DetailModal() {
   const allInputImageIds = task?.inputImageIds ?? []
   const outputSlots = useMemo(() => {
     if (!task) return []
-    const outputErrors = task.outputErrors ?? []
-    if (outputErrors.length === 0) {
-      return task.outputImages.map((imageId, outputImageIndex) => ({
-        requestIndex: outputImageIndex,
-        outputImageIndex,
-        imageId,
-        error: '',
-      }))
-    }
-
-    const errorsByIndex = new Map(outputErrors.map((item) => [item.requestIndex, item.error]))
-    const requestedCount = Math.max(task.params.n, task.outputImages.length + outputErrors.length)
-    let outputImageIndex = 0
-    return Array.from({ length: requestedCount }, (_, requestIndex) => {
-      const error = errorsByIndex.get(requestIndex)
-      if (error) return { requestIndex, outputImageIndex: -1, imageId: '', error }
-      const imageId = task.outputImages[outputImageIndex] ?? ''
-      const slot = { requestIndex, outputImageIndex, imageId, error: '' }
-      outputImageIndex += 1
-      return slot
+    return buildVisibleOutputSlots({
+      status: task.status,
+      requestedCount: task.params.n,
+      outputImages: task.outputImages,
+      outputImageRequestIndexes: task.outputImageRequestIndexes,
+      outputImageSubIndexes: task.outputImageSubIndexes,
+      outputErrors: task.outputErrors,
     })
   }, [task])
   const currentOutputSlot = outputSlots[imageIndex]
   const currentOutputImageId = currentOutputSlot?.imageId || ''
   const currentOutputImageIndex = currentOutputSlot?.outputImageIndex ?? -1
   const currentOutputError = currentOutputSlot?.error || ''
+  const currentStreamPreviewSrc = findStreamPreviewSrc(streamPreviewItems, currentOutputSlot?.requestIndex ?? imageIndex)
+
+  useEffect(() => {
+    setStreamPreviewLoaded(false)
+  }, [currentStreamPreviewSrc, detailTaskId, imageIndex])
   const currentOriginalOutputImageId = currentOutputImageIndex >= 0 ? task?.transparentOriginalImages?.[currentOutputImageIndex] || '' : ''
   const currentOutputPreviewSrc = currentOutputImageId ? outputPreviewSrcs[currentOutputImageId] || '' : ''
 
@@ -239,9 +216,11 @@ export default function DetailModal() {
   const outputLen = outputSlots.length
   const currentImageRatio = currentOutputImageId ? imageRatios[currentOutputImageId] : ''
   const currentImageSize = currentOutputImageId ? imageSizes[currentOutputImageId] : ''
-  const baseActualParams = currentOutputImageId
-    ? task.actualParamsByImage?.[currentOutputImageId] ?? task.actualParams
-    : task.actualParams
+  const baseActualParams = resolveDisplayedActualParams(
+    task.params.n,
+    task.actualParams,
+    currentOutputImageId ? task.actualParamsByImage?.[currentOutputImageId] : undefined,
+  )
   const currentActualParams = (baseActualParams?.size || !currentImageSize)
     ? baseActualParams
     : { ...(baseActualParams ?? {}), size: currentImageSize.replace('×', 'x') }
@@ -266,7 +245,8 @@ export default function DetailModal() {
   const isCustomReconnecting = task.status === 'error' && task.customRecoverable
   const rawImageUrls = task.rawImageUrls ?? []
   const streamPreviewLen = streamPreviewItems.length
-  const currentStreamPreviewSrc = activeStreamPreviewSrc
+  const visibleOutputImageIds = outputSlots.flatMap((slot) => slot.imageId ? [slot.imageId] : [])
+  const showSettledImage = (task.status === 'done' || (task.status === 'error' && !isFalReconnecting && !isCustomReconnecting)) && Boolean(currentOutputPreviewSrc)
   const streamPartialImageIds = task.streamPartialImageIds ?? []
   const supportsTransparentOutput = task.params.output_format === 'png' || task.params.output_format === 'webp'
   const transparentOutputText = task.transparentOutput || task.params.transparent_output ? 'true' : 'false'
@@ -396,8 +376,8 @@ export default function DetailModal() {
     try {
       const fileNameBase = `task-${task.id}`
       const result = settings.zipDownloadRoutes.includes('task-detail-all')
-        ? await downloadImageEntriesAsZip(getImageZipEntries(task.outputImages, fileNameBase), fileNameBase)
-        : await downloadImageIds(task.outputImages, fileNameBase)
+        ? await downloadImageEntriesAsZip(getImageZipEntries(visibleOutputImageIds, fileNameBase), fileNameBase)
+        : await downloadImageIds(visibleOutputImageIds, fileNameBase)
       if (result.successCount === 0) {
         showToast('下载失败', 'error')
       } else if (result.failCount > 0) {
@@ -461,7 +441,7 @@ export default function DetailModal() {
 
         {/* 左侧：图片 */}
         <div className="md:w-1/2 w-full h-64 md:h-auto bg-gray-100 dark:bg-black/20 relative flex items-center justify-center flex-shrink-0 min-h-[16rem]">
-          {task.status === 'done' && outputLen > 0 && (currentOutputImageId || task.outputImages.length > 0) && (
+          {(((task.status === 'done' || (task.status === 'error' && !isFalReconnecting)) && outputLen > 0 && (currentOutputImageId || visibleOutputImageIds.length > 0)) || (task.status === 'running' && currentOutputImageId)) && (
             <div className="absolute right-3 top-[15px] z-20 flex items-center gap-1.5">
               {currentOutputImageId && (
                 <div className="relative group flex">
@@ -482,7 +462,7 @@ export default function DetailModal() {
                   </ViewportTooltip>
                 </div>
               )}
-              {task.outputImages.length > 1 && (
+              {visibleOutputImageIds.length > 1 && (
                 <div className="relative group flex">
                   <button
                     type="button"
@@ -504,7 +484,7 @@ export default function DetailModal() {
               )}
             </div>
           )}
-          {task.status === 'done' && outputLen > 0 && currentOutputPreviewSrc && (
+          {showSettledImage && (
             <>
               <img
                 src={currentOutputPreviewSrc}
@@ -524,7 +504,7 @@ export default function DetailModal() {
                   }
                 }}
                 onClick={() =>
-                  setLightboxImageId(currentOutputImageId, task.outputImages)
+                  setLightboxImageId(currentOutputImageId, visibleOutputImageIds)
                 }
                 alt=""
               />
@@ -649,7 +629,30 @@ export default function DetailModal() {
                 </svg>
                 {formatDuration()}
               </div>
-              {task.status === 'running' && streamPreviewLen > 0 && (
+              {task.status === 'running' && currentOutputError && (
+                <div className="w-full max-w-md px-4 text-center">
+                  <svg className="w-10 h-10 text-red-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-sm font-medium text-red-500">第 {(currentOutputSlot?.requestIndex ?? imageIndex) + 1} 张生成失败</p>
+                  <p className="mt-2 overflow-hidden whitespace-pre-line text-sm leading-6 text-red-500 break-words">{currentOutputError}</p>
+                </div>
+              )}
+              {task.status === 'running' && !currentOutputError && currentOutputPreviewSrc && (
+                <>
+                  <img
+                    src={currentOutputPreviewSrc}
+                    data-image-id={currentOutputImageId}
+                    className="saveable-image max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)] object-contain cursor-pointer"
+                    alt=""
+                    onClick={() => setLightboxImageId(currentOutputImageId, visibleOutputImageIds)}
+                  />
+                  <span className="absolute top-4 right-4 flex items-center gap-1 rounded bg-emerald-500 px-2 py-0.5 text-xs font-medium text-white backdrop-blur-sm">
+                    已完成 {task.outputImages.length}/{Math.max(task.params.n, task.outputImages.length)}
+                  </span>
+                </>
+              )}
+              {task.status === 'running' && !currentOutputError && !currentOutputImageId && streamPreviewLen > 0 && (
                 <>
                   {currentStreamPreviewSrc ? (
                     <img
@@ -660,47 +663,41 @@ export default function DetailModal() {
                       onError={() => setStreamPreviewLoaded(false)}
                     />
                   ) : null}
-                  {(!currentStreamPreviewSrc || !streamPreviewLoaded) && (
-                    <svg className="w-10 h-10 text-blue-400 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                  )}
                   {streamPreviewLoaded && (
                     <span className="absolute top-4 right-4 flex items-center gap-1 rounded bg-blue-500 px-2 py-0.5 text-xs font-medium text-white backdrop-blur-sm">
                       流式预览
                     </span>
                   )}
-                  {streamPreviewLen > 1 && (
-                    <>
-                      <button
-                        onClick={() => setImageIndex((imageIndex - 1 + streamPreviewLen) % streamPreviewLen)}
-                        className="absolute left-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-black/30 text-white hover:bg-black/50 transition"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => setImageIndex((imageIndex + 1) % streamPreviewLen)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-black/30 text-white hover:bg-black/50 transition"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-                      <span className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/50 text-white text-xs px-2 py-0.5 rounded-full">
-                        {imageIndex + 1} / {streamPreviewLen}
-                      </span>
-                    </>
-                  )}
                 </>
               )}
-              {task.status === 'running' && streamPreviewLen === 0 && (
+              {task.status === 'running' && !currentOutputError && !currentOutputPreviewSrc && (Boolean(currentOutputImageId) || !currentStreamPreviewSrc || !streamPreviewLoaded) && (
                 <svg className="w-10 h-10 text-blue-400 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
+              )}
+              {task.status === 'running' && outputLen > 1 && (
+                <>
+                  <button
+                    onClick={() => setImageIndex((imageIndex - 1 + outputLen) % outputLen)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-black/30 text-white hover:bg-black/50 transition"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setImageIndex((imageIndex + 1) % outputLen)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-black/30 text-white hover:bg-black/50 transition"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                  <span className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/50 text-white text-xs px-2 py-0.5 rounded-full">
+                    {imageIndex + 1} / {outputLen}
+                  </span>
+                </>
               )}
             </>
           )}
@@ -713,16 +710,23 @@ export default function DetailModal() {
             </div>
           )}
           {task.status === 'error' && !isFalReconnecting && (
-            <div className="w-full max-w-md px-4 text-center">
-              <svg className="w-10 h-10 text-red-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+            <div className={showSettledImage
+              ? 'absolute inset-x-3 bottom-12 z-30 max-h-[34%] overflow-y-auto rounded-xl bg-black/70 px-3 py-2 text-center'
+              : 'w-full max-w-md px-4 text-center'}>
+
+              {!showSettledImage && (
+                <svg className="w-10 h-10 text-red-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              )}
               <p
-                className="overflow-hidden whitespace-pre-line text-sm leading-6 text-red-500 break-words"
+                className={showSettledImage
+                  ? 'overflow-hidden whitespace-pre-line text-xs leading-5 text-white break-words'
+                  : 'overflow-hidden whitespace-pre-line text-sm leading-6 text-red-500 break-words'}
                 style={{
                   display: '-webkit-box',
                   WebkitBoxOrient: 'vertical',
-                  WebkitLineClamp: 10,
+                  WebkitLineClamp: showSettledImage ? 2 : 10,
                 }}
               >
                 {task.error || '生成失败'}

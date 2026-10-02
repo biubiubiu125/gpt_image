@@ -9,7 +9,10 @@ import {
   deriveGalleryActualParams,
   firstActualParams,
   mapActualParamsByImage,
+  mapGalleryPerImageActualParams,
   mapRevisedPromptsByImage,
+  omitSplitSubrequestCount,
+  resolveDisplayedActualParams,
   markInterruptedOpenAIRunningTasks,
 } from './taskState'
 
@@ -126,5 +129,18 @@ describe('task actual params', () => {
       'image-a': ' revised ',
     })
     expect(mapRevisedPromptsByImage(['image-a'], [])).toBeUndefined()
+  })
+
+  it('drops echoed n=1 from split subrequests but keeps a real per-image count', () => {
+    expect(omitSplitSubrequestCount(4, { n: 1, quality: 'high' })).toEqual({ quality: 'high' })
+    expect(omitSplitSubrequestCount(4, { n: 2 })).toEqual({ n: 2 })
+    expect(mapGalleryPerImageActualParams(4, ['image-a'], [{ n: 1, size: '1024x1024' }])).toEqual({
+      'image-a': { size: '1024x1024' },
+    })
+    expect(resolveDisplayedActualParams(4, { n: 3, size: '1024x1024' }, { n: 1, quality: 'high' })).toEqual({
+      n: 3,
+      size: '1024x1024',
+      quality: 'high',
+    })
   })
 })

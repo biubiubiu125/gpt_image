@@ -595,6 +595,130 @@ describe('callImageApi', () => {
     ])
   })
 
+  it('publishes each completed image before the slower Images API request finishes', async () => {
+    let releaseSecond: (() => void) | undefined
+    const secondGate = new Promise<void>((resolve) => {
+      releaseSecond = resolve
+    })
+    const events: string[] = []
+    let calls = 0
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      const requestIndex = calls++
+      if (requestIndex === 0) {
+        const body = JSON.parse(String((init as RequestInit | undefined)?.body))
+        expect(body.model).toBe('gpt-image-2.5-flareg')
+        expect(body.n).toBeUndefined()
+      }
+      if (requestIndex === 1) {
+        events.push('second-started')
+        await secondGate
+        events.push('second-finished')
+      }
+      return new Response(JSON.stringify({
+        data: [{ b64_json: requestIndex === 0 ? 'aW1hZ2UtMA==' : 'aW1hZ2UtMQ==' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    const result = await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        apiMode: 'images',
+        model: 'gpt-image-2.5-flareg',
+        streamImages: false,
+        codexCli: false,
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, n: 2 },
+      inputImageDataUrls: [],
+      onCompletedImage: (image) => {
+        events.push(`image-${image.requestIndex}`)
+        if (image.requestIndex === 0) releaseSecond?.()
+      },
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(events).toEqual(['second-started', 'image-0', 'second-finished', 'image-1'])
+    expect(result.images).toEqual([
+      'data:image/png;base64,aW1hZ2UtMA==',
+      'data:image/png;base64,aW1hZ2UtMQ==',
+    ])
+    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body)).model).toBe('gpt-image-2.5-flareg')
+  })
+
+  it('keeps every image from one response on that request instead of shifting later slots', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      const requestIndex = vi.mocked(fetch).mock.calls.length - 1
+      const images = requestIndex === 0
+        ? [{ b64_json: 'YQ==' }, { b64_json: 'Yg==' }]
+        : [{ b64_json: 'Yw==' }]
+      return new Response(JSON.stringify({ data: images }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+    const completed: Array<{ requestIndex: number; imageIndex: number }> = []
+
+    const result = await callImageApi({
+      settings: { ...DEFAULT_SETTINGS, apiKey: 'test-key', apiMode: 'images', streamImages: false, codexCli: false },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, n: 2 },
+      inputImageDataUrls: [],
+      onCompletedImage: (image) => {
+        completed.push({ requestIndex: image.requestIndex, imageIndex: image.imageIndex })
+      },
+    })
+
+    expect(completed.filter((image) => image.requestIndex === 0).map((image) => image.imageIndex)).toEqual([0, 1])
+    expect(completed).toContainEqual({ requestIndex: 1, imageIndex: 0 })
+    expect(result.images).toHaveLength(3)
+    expect(result.imageSlots).toEqual([
+      { requestIndex: 0, imageIndex: 0 },
+      { requestIndex: 0, imageIndex: 1 },
+      { requestIndex: 1, imageIndex: 0 },
+    ])
+  })
+
+  it('reports a failed Images API request before the slower request finishes', async () => {
+    let releaseSecond: (() => void) | undefined
+    const secondGate = new Promise<void>((resolve) => {
+      releaseSecond = resolve
+    })
+    const events: string[] = []
+    let calls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      const requestIndex = calls++
+      if (requestIndex === 0) throw new Error('slot failed')
+      events.push('second-started')
+      await secondGate
+      events.push('second-finished')
+      return new Response(JSON.stringify({ data: [{ b64_json: 'YQ==' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    const result = await callImageApi({
+      settings: { ...DEFAULT_SETTINGS, apiKey: 'test-key', apiMode: 'images', streamImages: false, codexCli: false },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS, n: 2 },
+      inputImageDataUrls: [],
+      onFailedRequest: (failure) => {
+        events.push(`fail-${failure.requestIndex}`)
+        if (failure.requestIndex === 0) releaseSecond?.()
+      },
+      onCompletedImage: (image) => {
+        events.push(`image-${image.requestIndex}`)
+      },
+    })
+
+    expect(events).toEqual(['second-started', 'fail-0', 'second-finished', 'image-1'])
+    expect(result.failedRequests).toEqual([{ requestIndex: 0, error: 'slot failed' }])
+  })
+
   it('keeps successful Images API concurrent results when one request fails', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
       const callIndex = fetchMock.mock.calls.length

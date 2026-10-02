@@ -214,6 +214,10 @@ export interface TaskRecord {
   maskImageId?: string | null
   /** 输出图片的 image store id 列表 */
   outputImages: string[]
+  /** 已完成图片对应的请求序号，顺序与 outputImages 一致 */
+  outputImageRequestIndexes?: number[]
+  /** 已完成图片在所属请求内的序号，顺序与 outputImages 一致 */
+  outputImageSubIndexes?: number[]
   /** 并发多图中失败的输出槽位，requestIndex 为从 0 开始的请求序号 */
   outputErrors?: Array<{ requestIndex: number; error: string }>
   /** 流式生成的中间步骤图片 id 列表，仅失败时保留供排查/下载 */
